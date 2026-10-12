@@ -14,10 +14,10 @@ const BLOCKS = [                                // dow: 5 = Fri, 6 = Sat, 0 = Su
 ];
 const TIERS = [                                 // first match wins
   { min: 8.5, key: "epic",   label: "Epic" },
-  { min: 7,   key: "go",     label: "Go" },
+  { min: 7,   key: "go",     label: "Solid" },
   { min: 5,   key: "decent", label: "Decent" },
   { min: 3,   key: "meh",    label: "Meh" },
-  { min: 0,   key: "skip",   label: "Skip" },
+  { min: 0,   key: "skip",   label: "Crap" },
 ];
 const tierOf = r => TIERS.find(t => r >= t.min);
 

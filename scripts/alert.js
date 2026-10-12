@@ -17,7 +17,7 @@ const S = require("../scoring.js");
 const STATE_FILE = path.join(__dirname, "..", "alert-state.json");
 const MAX_LEAD = Number(process.env.MAX_LEAD_DAYS || 5);
 const EPIC = S.TIERS.find(t => t.key === "epic").min;   // median must be Epic...
-const FLOOR = S.TIERS.find(t => t.key === "go").min;    // ...and the lower quartile at least Go
+const FLOOR = S.TIERS.find(t => t.key === "go").min;    // ...and the lower quartile at least Solid
 
 function isEpic(b) { return b.med >= EPIC && b.lo >= FLOOR; }
 
