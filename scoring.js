@@ -47,7 +47,7 @@ function hourScore(h) {
   const gust = h.gust ?? h.wind * 1.5;
   const gustPen = Math.max(0, gust - 25) * 0.15;                        // 40 km/h gusts → -2.25
   const feels = h.feels ?? h.temp;                                      // apparent temp: sun, wind and humidity included
-  const tempM = curve(feels, [[12, 0.3], [20, 1], [32, 1], [35, 0.75], [40, 0.3]]);   // 20–32°C no penalty
+  const tempM = curve(feels, [[10, 0.3], [18, 1], [32, 1], [35, 0.75], [40, 0.3]]);   // 18–32°C no penalty
   const rainM = h.rain >= 1 ? 0.2 : h.rain >= 0.2 ? 0.5 : 1;
   const wetM = curve(h.wetness ?? 0, [[1, 1], [4, 0.75], [10, 0.5]]);  // soggy, heavy sand after earlier rain
   return Math.max(0, Math.min(10, (windR - gustPen) * tempM * rainM * wetM));
