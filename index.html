@@ -156,7 +156,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </footer>
 </div>
 
-<script src="scoring.js"></script>
+<script src="scoring.js?v=2026-10-12b"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
 <script>
 const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
 
@@ -316,7 +316,7 @@ function renderForecast() {
         grid.append(c); continue;
       }
       if (b.missing || !b.scores?.length) {
-        c.innerHTML = `<h3>${b.name}</h3><div class="verdict"><span class="pill na">No data</span></div><div class="conf">Past or beyond the forecast range.</div>`;
+        c.innerHTML = `<h3>${b.name}</h3><div class="verdict"><span class="pill na">No data</span></div><div class="conf">${b.day < todayMelb() ? "Already past." : "Beyond the forecast range (it runs out around day 13)."}</div>`;
         grid.append(c); continue;
       }
       const t = tierOf(b.med);
@@ -547,7 +547,11 @@ function drawMinis() {
 }
 
 const howto = document.getElementById("howto");
-const drawHowto = () => { if (howto.open) { drawPolar(); drawMinis(); drawKey(); } };
+const drawHowto = () => {
+  if (!howto.open) return;
+  try { drawPolar(); drawMinis(); drawKey(); }
+  catch (e) { document.getElementById("polar-read").textContent = "Couldn't draw the charts. Reload the page to get the latest version."; console.error(e); }
+};
 howto.addEventListener("toggle", drawHowto);
 window.addEventListener("resize", () => { clearTimeout(drawHowto.t); drawHowto.t = setTimeout(drawHowto, 200); });
 try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawHowto); } catch {}
