@@ -50,8 +50,8 @@ const gustExcess = h => Math.max(0, (h.gust ?? h.wind * 1.4) - h.wind);
 function hourScore(h) {
   const eff = h.wind * dirFactor(h.dir);                                // km/h, adjusted for shelter
   const windR = curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);     // glassy = 10, still rewarding calm below 12
-  // Gusts 12 km/h above the average shift a high set ~0.5 m unexpectedly; 18 km/h above, ~1 m.
-  const gustPen = curve(gustExcess(h), [[6, 0], [12, 1.5], [18, 3.5], [25, 5]]);
+  // Gustiness costs a little: light wind with puffs stays Solid; strong gusts on top of real wind cost more.
+  const gustPen = curve(gustExcess(h), [[6, 0], [10, 0.5], [15, 1.5], [20, 2.5], [30, 4]]);
   const feels = h.feels ?? h.temp;                                      // apparent temp: sun, wind and humidity included
   const tempM = curve(feels, [[10, 0.3], [18, 1], [32, 1], [35, 0.75], [40, 0.3]]);   // 18–32°C no penalty
   const rainM = h.rain >= 1 ? 0.2 : h.rain >= 0.2 ? 0.5 : 1;
