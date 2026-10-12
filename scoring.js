@@ -35,17 +35,23 @@ function curve(x, pts) {                        // linear interpolation through 
   return pts[pts.length - 1][1];
 }
 // Recency-weighted rain over the previous 12 hours (mm): rain 1h ago counts fully, 12h ago barely.
-function wetness(precip, i) {
+// getP(k) returns the precipitation stamped at index k (the total for the hour ending at k).
+function wetness(getP, i) {
   let w = 0;
-  for (let k = 1; k <= 12 && i - k >= 0; k++) w += (precip?.[i - k] ?? 0) * (1 - (k - 1) / 12);
+  for (let k = 1; k <= 12 && i - k >= 0; k++) w += (getP(i - k) ?? 0) * (1 - (k - 1) / 12);
   return w;
 }
-// 0–10 "worth going" rating for one hour. Calm wind drives it; feels-like temperature, rain and wet sand scale it down.
+
+// ECMWF over-forecasts 10 m gusts by about 1.5 m/s on average (SMHI verification), so model gusts are reduced by this.
+const GUST_BIAS = 5;                            // km/h
+// Gustiness: how far gusts rise above the average wind. Players can adjust to steady wind; sudden changes they can't.
+const gustExcess = h => Math.max(0, (h.gust ?? h.wind * 1.4) - h.wind);
+// 0–10 "worth going" rating for one hour. Calm, steady wind drives it; feels-like temperature, rain and wet sand scale it down.
 function hourScore(h) {
   const eff = h.wind * dirFactor(h.dir);                                // km/h, adjusted for shelter
   const windR = curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);     // glassy = 10, still rewarding calm below 12
-  const gust = h.gust ?? h.wind * 1.5;
-  const gustPen = Math.max(0, gust - 25) * 0.15;                        // 40 km/h gusts → -2.25
+  // Gusts 12 km/h above the average shift a high set ~0.5 m unexpectedly; 18 km/h above, ~1 m.
+  const gustPen = curve(gustExcess(h), [[6, 0], [12, 1.5], [18, 3.5], [25, 5]]);
   const feels = h.feels ?? h.temp;                                      // apparent temp: sun, wind and humidity included
   const tempM = curve(feels, [[10, 0.3], [18, 1], [32, 1], [35, 0.75], [40, 0.3]]);   // 18–32°C no penalty
   const rainM = h.rain >= 1 ? 0.2 : h.rain >= 0.2 ? 0.5 : 1;
@@ -118,10 +124,48 @@ function toMembers(json) {
   }
   return { time: H.time, members: Object.values(members).filter(m => m.wind_speed_10m && m.temperature_2m) };
 }
-const memberHour = (m, i) => ({ wind: m.wind_speed_10m[i], dir: m.wind_direction_10m?.[i] ?? 180, gust: m.wind_gusts_10m?.[i],
-  temp: m.temperature_2m[i], feels: m.apparent_temperature?.[i] ?? undefined, rain: m.precipitation?.[i] ?? 0, wetness: wetness(m.precipitation, i) });
+// Conditions for the playing hour starting at index i (h:00 to h+1:00). get(variable, index) reads one value.
+// Open-Meteo wind and temperature are instantaneous at each hour mark, but gusts (maximum) and precipitation (total)
+// cover the hour ending at their timestamp. So the hour h→h+1 averages the marks at i and i+1, and takes the
+// gust and rain stamped at i+1.
+function hourFrom(get, i) {
+  const j = get("wind_speed_10m", i + 1) != null ? i + 1 : i;
+  const avg = v => { const a = get(v, i), b = get(v, j); return a == null ? (b ?? undefined) : b == null ? a : (a + b) / 2; };
+  const wind = avg("wind_speed_10m"), temp = avg("temperature_2m");
+  if (wind == null || temp == null) return null;
+  const d0 = get("wind_direction_10m", i), d1 = get("wind_direction_10m", j), g = get("wind_gusts_10m", j);
+  return { wind, temp, feels: avg("apparent_temperature"),
+    dir: d0 == null ? 180 : d1 == null ? d0 : circMean([d0, d1]),
+    gust: g == null ? undefined : Math.max(wind, g - GUST_BIAS),
+    rain: get("precipitation", j) ?? 0,
+    wetness: wetness(k => get("precipitation", k), j) };
+}
+const memberHour = (m, i) => hourFrom((v, k) => m[v]?.[k], i);
 
-function weekendBuckets({ time, members }) {
+// An hour counts for at most the average of itself and its neighbours. Forecast timing is often out by an hour or
+// more, and a single calm hour between windy ones is hard to plan around, so isolated lulls are discounted.
+function sustain(r) {
+  return r.map((x, i) => {
+    if (x == null) return null;
+    const nb = [r[i - 1], x, r[i + 1]].filter(v => v != null);
+    return Math.min(x, nb.reduce((a, b) => a + b, 0) / nb.length);
+  });
+}
+// A session's score is mostly its average hour, but its worst hour drags it down, so Epic needs the whole window to hold.
+function blockScore(rs) {
+  const v = rs.filter(x => x != null);
+  if (!v.length) return null;
+  return 0.75 * v.reduce((a, b) => a + b, 0) / v.length + 0.25 * Math.min(...v);
+}
+function ratingSeries(get, n) {
+  const hours = Array.from({ length: n }, (_, i) => hourFrom(get, i));
+  const raw = hours.map(h => h ? hourScore(h) : null);
+  return { hours, raw, sust: sustain(raw) };
+}
+const memberSeries = data => data.series ??= data.members.map(m => ratingSeries((v, k) => m[v]?.[k], data.time.length));
+
+function weekendBuckets(data) {
+  const { time, members } = data, series = memberSeries(data);
   const dates = [...new Set(time.map(t => t.slice(0, 10)))];
   const fridays = dates.filter(d => dowOf(d) === 5);
   const firstDow = dowOf(dates[0]);
@@ -134,22 +178,25 @@ function weekendBuckets({ time, members }) {
     const idx = inBlock.filter(([t]) => playable(day, +t.slice(11, 13))).map(([, i]) => i);
     if (!idx.length) return { ...b, day, dark: true, sunset };
     const playStart = +time[idx[0]].slice(11, 13), playEnd = +time[idx[idx.length - 1]].slice(11, 13) + 1;
-    const scores = [], winds = [], gusts = [], dirs = [], temps = [], feels = []; let wet = 0;
-    for (const m of members) {
-      let tot = 0, cnt = 0, rainy = false;
+    const scores = [], winds = [], gusts = [], dirs = [], temps = [], feels = []; let wet = 0, gusty = 0;
+    for (const s of series) {
+      const sc = blockScore(idx.map(i => s.sust[i]));
+      if (sc == null) continue;
+      scores.push(sc);
+      let rainy = false, puffy = false;
       for (const i of idx) {
-        const h = memberHour(m, i);
-        if (h.wind == null || h.temp == null) continue;
-        tot += hourScore(h); cnt++; winds.push(h.wind); dirs.push(h.dir); temps.push(h.temp); feels.push(h.feels ?? h.temp);
+        const h = s.hours[i]; if (!h) continue;
+        winds.push(h.wind); dirs.push(h.dir); temps.push(h.temp); feels.push(h.feels ?? h.temp);
         if (h.gust != null) gusts.push(h.gust);
         if (h.rain >= 0.2) rainy = true;
+        if (gustExcess(h) >= 10) puffy = true;
       }
-      if (cnt) { scores.push(tot / cnt); if (rainy) wet++; }
+      if (rainy) wet++; if (puffy) gusty++;
     }
     const lo = pctile(scores, .25), hi = pctile(scores, .75);
     return { ...b, day, scores, med: pctile(scores, .5), lo, hi, iqr: hi - lo, i0: idx[0],
       playStart, playEnd, clipped: playStart > b.start || playEnd < b.end, sunset, feels: pctile(feels, .5),
-      pRain: wet / members.length, wind: pctile(winds, .5), gust: gusts.length ? pctile(gusts, .5) : null,
+      pRain: wet / members.length, pGusty: gusty / members.length, wind: pctile(winds, .5), gust: gusts.length ? pctile(gusts, .5) : null,
       dir: circMean(dirs), temp: pctile(temps, .5),
       lead: Math.round((new Date(day) - new Date(dates[0])) / 864e5) };
   }) }));
@@ -159,4 +206,5 @@ if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, dirFactor, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
   wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, toMembers, memberHour, weekendBuckets,
+  GUST_BIAS, gustExcess, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };

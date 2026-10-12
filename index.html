@@ -114,7 +114,8 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </header>
   <main id="out"></main>
   <footer class="legend">
-    <div><strong>Rating</strong> (0–10): calm wind drives it, so near-glassy conditions score 10 and every extra km/h costs points. Gusts, rain and wet sand (rain in the previous 12 hours) scale it down, as do feels-like temperatures below 18°C or above 32°C. Feels-like includes sun, wind and humidity. Buckets only count hours between sunrise and 15 minutes after sunset. Wind from the bay (S–SW, onshore) counts up to 15% stronger; wind from the land (N–NE, offshore) up to 25% weaker, since the beach is sheltered from it.</div>
+    <div><strong>Rating</strong> (0–10): calm, steady wind drives it, so near-glassy conditions score 10 and every extra km/h costs points. Gustiness (gusts well above the average wind) costs extra, since sudden changes are what throw sets and serves off. Model gusts are reduced by 5 km/h to correct ECMWF's known over-forecast. "Gusty" is the chance of gusts 10+ km/h above the average. Gusts, rain and wet sand (rain in the previous 12 hours) scale it down, as do feels-like temperatures below 18°C or above 32°C. Feels-like includes sun, wind and humidity. Buckets only count hours between sunrise and 15 minutes after sunset. Wind from the bay (S–SW, onshore) counts up to 15% stronger; wind from the land (N–NE, offshore) up to 25% weaker, since the beach is sheltered from it.</div>
+    <div><strong>Holding up:</strong> an hour can't score higher than the average of itself and its neighbours, because forecast timing is often out by an hour and a brief lull is hard to plan around. A bucket's score is 75% its average hour and 25% its worst hour, so Epic means the whole window holds.</div>
     <div><strong>Epic</strong> ≥ 8.5 · <strong>Solid</strong> ≥ 7 · <strong>Decent</strong> ≥ 5 · <strong>Meh</strong> ≥ 3 · <strong>Crap</strong> below. Bucket cards show the median across members and the likely range (middle half of members).</div>
     <div>Data: Open-Meteo ensemble API (ECMWF IFS 0.25°); sunrise and sunset calculated for the beach.</div>
   </footer>
@@ -126,16 +127,18 @@ const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window
 
 
 // ---------- Analysis ----------
-function hourlyStats({ time, members }) {
-  return time.map((t, i) => {
-    const hs = members.map(m => memberHour(m, i)).filter(h => h.wind != null && h.temp != null);
+function hourlyStats(data) {
+  const series = memberSeries(data);
+  return data.time.map((t, i) => {
+    const hs = series.map(s => s.hours[i]).filter(Boolean);
     const day = t.slice(0, 10), h = +t.slice(11, 13), [rise, set] = sunTimes(day);
-    const r = hs.map(hourScore), gusts = hs.map(x => x.gust).filter(g => g != null);
+    const r = series.map(s => s.sust[i]).filter(x => x != null), gusts = hs.map(x => x.gust).filter(g => g != null);
     return { t, day, h, daylight: h + 1 > rise && h < set, n: hs.length,
       med: pctile(r, .5), p25: pctile(r, .25), p75: pctile(r, .75), p10: pctile(r, .1), p90: pctile(r, .9),
       wind: pctile(hs.map(x => x.wind), .5), gust: gusts.length ? pctile(gusts, .5) : null,
       dir: circMean(hs.map(x => x.dir)), temp: pctile(hs.map(x => x.temp), .5), feels: pctile(hs.map(x => x.feels ?? x.temp), .5),
-      pRain: hs.length ? hs.filter(x => x.rain >= 0.2).length / hs.length : 0 };
+      pRain: hs.length ? hs.filter(x => x.rain >= 0.2).length / hs.length : 0,
+      pGusty: hs.length ? hs.filter(x => gustExcess(x) >= 10).length / hs.length : 0 };
   });
 }
 
@@ -236,6 +239,7 @@ function setFocus(i, scrollTo) {
     ${t ? `<span class="pill ${t.key}">${t.label} ${x.med.toFixed(1)}</span><span><span class="k">likely</span> ${x.p25.toFixed(1)}–${x.p75.toFixed(1)}</span>` : ""}
     <span><span class="k">wind</span> ${Math.round(x.wind)} km/h ${compass(x.dir)}</span>
     <span><span class="k">gusts</span> ${x.gust != null ? Math.round(x.gust) + " km/h" : "n/a"}</span>
+    <span><span class="k">gusty</span> ${Math.round(x.pGusty * 100)}%</span>
     <span><span class="k">temp</span> ${Math.round(x.temp)}°C <span class="k">feels</span> ${Math.round(x.feels)}°</span>
     <span><span class="k">rain</span> ${Math.round(x.pRain * 100)}%</span>`;
   if (scrollTo) { const box = document.getElementById("chart-scroll"); box.scrollLeft = Math.max(0, X(i) - box.clientWidth / 3); }
@@ -291,6 +295,7 @@ function renderForecast() {
         <dl>
           <dt>Wind</dt><dd>${Math.round(b.wind)} km/h ${compass(b.dir)}</dd>
           <dt>Gusts</dt><dd>${b.gust != null ? Math.round(b.gust) + " km/h" : "n/a"}</dd>
+          <dt>Gusty</dt><dd>${Math.round(b.pGusty * 100)}%</dd>
           <dt>Temp</dt><dd>${Math.round(b.temp)}°C (feels ${Math.round(b.feels)})</dd>
           <dt>Rain</dt><dd>${Math.round(b.pRain * 100)}%</dd>
         </dl>
@@ -341,19 +346,16 @@ async function fetchPast(fri) {
 
 function analysePast(json, fri) {
   const H = json.hourly, time = H.time;
-  const get = (v, n, i) => H[`${v}_previous_day${n}`]?.[i];
+  const series = Object.fromEntries(LEADS.map(n => [n, ratingSeries((v, k) => H[`${v}_previous_day${n}`]?.[k], time.length)]));
   return BLOCKS.map(b => {
     const day = addDays(fri, { 5: 0, 6: 1, 0: 2 }[b.dow]);
     const idx = time.map((t, i) => [t, i]).filter(([t]) => { const h = +t.slice(11, 13);
       return t.slice(0, 10) === day && h >= b.start && h < b.end && playable(day, h); }).map(([, i]) => i);
     if (!idx.length) return { ...b, day, dark: true, sunset: sunTimes(day)[1], rows: [] };
     const rows = LEADS.map(n => {
-      const hs = idx.map(i => ({ wind: get("wind_speed_10m", n, i), dir: get("wind_direction_10m", n, i) ?? 180,
-        gust: get("wind_gusts_10m", n, i), temp: get("temperature_2m", n, i), feels: get("apparent_temperature", n, i) ?? undefined,
-        rain: get("precipitation", n, i) ?? 0, wetness: wetness(H[`precipitation_previous_day${n}`], i) }))
-        .filter(h => h.wind != null && h.temp != null);
-      if (!hs.length) return { n, missing: true };
-      return { n, score: hs.reduce((a, h) => a + hourScore(h), 0) / hs.length,
+      const s = series[n], hs = idx.map(i => s.hours[i]).filter(Boolean), score = blockScore(idx.map(i => s.sust[i]));
+      if (!hs.length || score == null) return { n, missing: true };
+      return { n, score,
         wind: hs.reduce((a, h) => a + h.wind, 0) / hs.length, dir: circMean(hs.map(h => h.dir)),
         temp: hs.reduce((a, h) => a + (h.feels ?? h.temp), 0) / hs.length, rain: hs.reduce((a, h) => a + h.rain, 0) };
     });

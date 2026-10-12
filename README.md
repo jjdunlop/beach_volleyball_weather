@@ -16,6 +16,16 @@ Rates how worth it beach volleyball at South Melbourne Beach will be, hour by ho
 4. **Optional: make notifications open the page.** Same screen, *Variables* tab → `PAGE_URL` = the Pages URL from step 1.
 5. **Test it.** Actions → *Epic alerts* → *Run workflow* (leave "Send a test notification" ticked). Your phone should get the current weekend outlook within a minute.
 
+## How the rating works
+
+All in `scoring.js`.
+
+- **Wind** sets the ceiling: about 5 km/h or less (10 m model wind, adjusted for direction) is 10, 12 km/h is 7.5, 25 km/h is 2. Onshore (S–SW) counts up to 15% stronger, offshore (N–NE) up to 25% weaker.
+- **Gustiness** (gusts above the average wind) costs extra: steady wind can be played around, sudden changes can't. Model gusts are reduced by 5 km/h first, because ECMWF over-forecasts gusts by about 1.5 m/s on average (SMHI verification).
+- **Feels-like temperature** outside 18–32°C, **rain**, and **wet sand** from rain in the previous 12 hours scale the rating down.
+- **Holding up:** an hour can't score above the average of itself and its neighbours (forecast timing is often out by an hour), and a bucket is 75% its average hour + 25% its worst hour.
+- **Data alignment:** Open-Meteo wind and temperature are instantaneous at each hour mark, while gusts and precipitation cover the preceding hour, so the hour h→h+1 averages the marks at h and h+1 and uses the gust and rain stamped at h+1.
+
 ## What triggers a notification
 
 - A weekend bucket (Fri night, Sat midday, Sat arvo, Sun midday, Sun arvo) up to 5 days ahead turns **Epic**: median rating ≥ 8.5 and the lower quartile of ensemble members ≥ 7, so most members agree.
