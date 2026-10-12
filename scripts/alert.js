@@ -25,7 +25,7 @@ function describe(b) {
   const t = S.tierOf(b.med);
   return `${t.label} ${b.med.toFixed(1)}/10 (likely ${b.lo.toFixed(1)}–${b.hi.toFixed(1)}) · ` +
     `${Math.round(b.wind)} km/h ${S.compass(b.dir)}, gusts ${b.gust != null ? Math.round(b.gust) : "?"} · ` +
-    `${Math.round(b.temp)}°C · rain ${Math.round(b.pRain * 100)}%`;
+    `${Math.round(b.temp)}°C (feels ${Math.round(b.feels)}) · rain ${Math.round(b.pRain * 100)}%`;
 }
 
 async function notify({ title, message, priority = 3, tags = ["volleyball"] }) {
@@ -57,7 +57,7 @@ async function main() {
     week: S.addDays(today, -((S.dowOf(today) + 6) % 7)) };
 
   const upcoming = weekends.flatMap(w => w.blocks).filter(b => !b.missing && b.scores?.length &&
-    (b.day > today || (b.day === today && b.end > hour)));
+    (b.day > today || (b.day === today && b.playEnd > hour)));   // dark buckets have no scores, so never alert
   const leadOf = b => Math.round((new Date(b.day) - new Date(today)) / 864e5);
 
   const turnedEpic = [], droppedOut = [];
@@ -68,7 +68,7 @@ async function main() {
     if (epic && !prev?.epic) turnedEpic.push(b);
     else if (!epic && prev?.epic) droppedOut.push(b);
   }
-  const when = b => `${S.fmtDay(b.day)}, ${S.hr(b.start)}–${S.hr(b.end)}`;
+  const when = b => `${S.fmtDay(b.day)}, ${S.hr(b.playStart)}–${S.hr(b.playEnd)}`;
   const ahead = b => { const n = leadOf(b); return n === 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`; };
   if (turnedEpic.length) await notify({
     title: `${turnedEpic.map(b => b.name).join(" + ")} looks EPIC (${ahead(turnedEpic[0])})`,

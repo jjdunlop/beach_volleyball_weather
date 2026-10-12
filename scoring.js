@@ -34,15 +34,23 @@ function curve(x, pts) {                        // linear interpolation through 
   }
   return pts[pts.length - 1][1];
 }
-// 0–10 "worth going" rating for one hour. Calm wind drives it; temperature and rain scale it down.
+// Recency-weighted rain over the previous 12 hours (mm): rain 1h ago counts fully, 12h ago barely.
+function wetness(precip, i) {
+  let w = 0;
+  for (let k = 1; k <= 12 && i - k >= 0; k++) w += (precip?.[i - k] ?? 0) * (1 - (k - 1) / 12);
+  return w;
+}
+// 0–10 "worth going" rating for one hour. Calm wind drives it; feels-like temperature, rain and wet sand scale it down.
 function hourScore(h) {
   const eff = h.wind * dirFactor(h.dir);                                // km/h, adjusted for shelter
   const windR = curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);     // glassy = 10, still rewarding calm below 12
   const gust = h.gust ?? h.wind * 1.5;
   const gustPen = Math.max(0, gust - 25) * 0.15;                        // 40 km/h gusts → -2.25
-  const tempM = curve(h.temp, [[12, 0.3], [20, 1], [32, 1], [35, 0.75], [40, 0.3]]);  // 20–32°C no penalty
+  const feels = h.feels ?? h.temp;                                      // apparent temp: sun, wind and humidity included
+  const tempM = curve(feels, [[12, 0.3], [20, 1], [32, 1], [35, 0.75], [40, 0.3]]);   // 20–32°C no penalty
   const rainM = h.rain >= 1 ? 0.2 : h.rain >= 0.2 ? 0.5 : 1;
-  return Math.max(0, Math.min(10, (windR - gustPen) * tempM * rainM));
+  const wetM = curve(h.wetness ?? 0, [[1, 1], [4, 0.75], [10, 0.5]]);  // soggy, heavy sand after earlier rain
+  return Math.max(0, Math.min(10, (windR - gustPen) * tempM * rainM * wetM));
 }
 
 // ---------- Helpers ----------
@@ -64,9 +72,31 @@ const todayMelb = () => nowMelb().slice(0, 10);
 const fmtDay = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 const hr = h => (h % 12 || 12) + (h % 24 < 12 ? "am" : "pm");
 const hrsOf = s => { const [h, m] = s.slice(11, 16).split(":").map(Number); return h + m / 60; };
+const hm = x => { const h = Math.floor(x), m = Math.round((x - h) * 60); return `${h % 12 || 12}:${String(m).padStart(2, "0")}${h < 12 ? "am" : "pm"}`; };
+
+// ---------- Daylight ----------
+function utcOffset(day) {                        // Melbourne's UTC offset in hours on that date (10 or 11)
+  const s = new Intl.DateTimeFormat("en-US", { timeZone: TZ, timeZoneName: "shortOffset" })
+    .formatToParts(new Date(day + "T02:00:00Z")).find(p => p.type === "timeZoneName").value;
+  const m = s.match(/GMT([+-]\d+)(?::(\d+))?/);
+  return m ? +m[1] + (m[2] ? Math.sign(+m[1]) * m[2] / 60 : 0) : 10;
+}
+const sunCache = {};
+function sunTimes(day) {                         // [sunrise, sunset] in local hours (NOAA approximation, ±2 min)
+  if (sunCache[day]) return sunCache[day];
+  const d = new Date(day + "T12:00:00Z"), n = Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 1)) / 864e5) + 1;
+  const g = 2 * Math.PI / 365 * (n - 1), rad = Math.PI / 180;
+  const eq = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+  const dec = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+  const ha = Math.acos(Math.cos(90.833 * rad) / (Math.cos(LAT * rad) * Math.cos(dec)) - Math.tan(LAT * rad) * Math.tan(dec)) / rad;
+  const off = utcOffset(day);
+  return sunCache[day] = [(720 - 4 * (LON + ha) - eq) / 60 + off, (720 - 4 * (LON - ha) - eq) / 60 + off];
+}
+// An hour is playable if its midpoint is after sunrise and no later than 15 min after sunset.
+function playable(day, h) { const [rise, set] = sunTimes(day); return h + 0.5 >= rise && h + 0.5 <= set + 0.25; }
 
 // ---------- Data ----------
-const VARS = ["temperature_2m", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "precipitation"];
+const VARS = ["temperature_2m", "apparent_temperature", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "precipitation"];
 
 async function fetchEnsemble() {
   const url = "https://ensemble-api.open-meteo.com/v1/ensemble?" + new URLSearchParams({
@@ -77,17 +107,6 @@ async function fetchEnsemble() {
   if (!r.ok) throw new Error("Forecast service returned " + r.status);
   return r.json();
 }
-async function fetchSun() {                      // optional; falls back to 6am–8pm
-  try {
-    const r = await fetch("https://api.open-meteo.com/v1/forecast?" + new URLSearchParams({
-      latitude: LAT, longitude: LON, daily: "sunrise,sunset", forecast_days: 16, timezone: TZ }));
-    if (!r.ok) return {};
-    const j = await r.json(), out = {};
-    j.daily.time.forEach((d, i) => out[d] = [hrsOf(j.daily.sunrise[i]), hrsOf(j.daily.sunset[i])]);
-    return out;
-  } catch { return {}; }
-}
-
 // Split Open-Meteo's flat keys ("wind_speed_10m", "wind_speed_10m_member01", …) into members.
 function toMembers(json) {
   const H = json.hourly, members = {};
@@ -99,7 +118,8 @@ function toMembers(json) {
   }
   return { time: H.time, members: Object.values(members).filter(m => m.wind_speed_10m && m.temperature_2m) };
 }
-const memberHour = (m, i) => ({ wind: m.wind_speed_10m[i], dir: m.wind_direction_10m?.[i] ?? 180, gust: m.wind_gusts_10m?.[i], temp: m.temperature_2m[i], rain: m.precipitation?.[i] ?? 0 });
+const memberHour = (m, i) => ({ wind: m.wind_speed_10m[i], dir: m.wind_direction_10m?.[i] ?? 180, gust: m.wind_gusts_10m?.[i],
+  temp: m.temperature_2m[i], feels: m.apparent_temperature?.[i] ?? undefined, rain: m.precipitation?.[i] ?? 0, wetness: wetness(m.precipitation, i) });
 
 function weekendBuckets({ time, members }) {
   const dates = [...new Set(time.map(t => t.slice(0, 10)))];
@@ -108,15 +128,19 @@ function weekendBuckets({ time, members }) {
   if (firstDow === 6 || firstDow === 0) fridays.unshift(addDays(dates[0], firstDow === 6 ? -1 : -2));
   return fridays.slice(0, 2).map(fri => ({ fri, blocks: BLOCKS.map(b => {
     const day = addDays(fri, { 5: 0, 6: 1, 0: 2 }[b.dow]);
-    const idx = time.map((t, i) => [t, i]).filter(([t]) => t.slice(0, 10) === day && +t.slice(11, 13) >= b.start && +t.slice(11, 13) < b.end).map(([, i]) => i);
-    if (!idx.length) return { ...b, day, missing: true };
-    const scores = [], winds = [], gusts = [], dirs = [], temps = []; let wet = 0;
+    const inBlock = time.map((t, i) => [t, i]).filter(([t]) => t.slice(0, 10) === day && +t.slice(11, 13) >= b.start && +t.slice(11, 13) < b.end);
+    if (!inBlock.length) return { ...b, day, missing: true };
+    const sunset = sunTimes(day)[1];
+    const idx = inBlock.filter(([t]) => playable(day, +t.slice(11, 13))).map(([, i]) => i);
+    if (!idx.length) return { ...b, day, dark: true, sunset };
+    const playStart = +time[idx[0]].slice(11, 13), playEnd = +time[idx[idx.length - 1]].slice(11, 13) + 1;
+    const scores = [], winds = [], gusts = [], dirs = [], temps = [], feels = []; let wet = 0;
     for (const m of members) {
       let tot = 0, cnt = 0, rainy = false;
       for (const i of idx) {
         const h = memberHour(m, i);
         if (h.wind == null || h.temp == null) continue;
-        tot += hourScore(h); cnt++; winds.push(h.wind); dirs.push(h.dir); temps.push(h.temp);
+        tot += hourScore(h); cnt++; winds.push(h.wind); dirs.push(h.dir); temps.push(h.temp); feels.push(h.feels ?? h.temp);
         if (h.gust != null) gusts.push(h.gust);
         if (h.rain >= 0.2) rainy = true;
       }
@@ -124,6 +148,7 @@ function weekendBuckets({ time, members }) {
     }
     const lo = pctile(scores, .25), hi = pctile(scores, .75);
     return { ...b, day, scores, med: pctile(scores, .5), lo, hi, iqr: hi - lo, i0: idx[0],
+      playStart, playEnd, clipped: playStart > b.start || playEnd < b.end, sunset, feels: pctile(feels, .5),
       pRain: wet / members.length, wind: pctile(winds, .5), gust: gusts.length ? pctile(gusts, .5) : null,
       dir: circMean(dirs), temp: pctile(temps, .5),
       lead: Math.round((new Date(day) - new Date(dates[0])) / 864e5) };
@@ -132,6 +157,6 @@ function weekendBuckets({ time, members }) {
 
 if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, dirFactor, curve, hourScore,
-  dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf,
-  VARS, fetchEnsemble, fetchSun, toMembers, memberHour, weekendBuckets,
+  dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
+  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, toMembers, memberHour, weekendBuckets,
 };

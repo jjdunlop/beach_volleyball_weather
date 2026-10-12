@@ -114,9 +114,9 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </header>
   <main id="out"></main>
   <footer class="legend">
-    <div><strong>Rating</strong> (0–10): calm wind drives it, so near-glassy conditions score 10 and every extra km/h costs points. Gusts and rain scale it down, as do temperatures below 20°C or above 32°C. Wind from the bay (S–SW, onshore) counts up to 15% stronger; wind from the land (N–NE, offshore) up to 25% weaker, since the beach is sheltered from it.</div>
+    <div><strong>Rating</strong> (0–10): calm wind drives it, so near-glassy conditions score 10 and every extra km/h costs points. Gusts, rain and wet sand (rain in the previous 12 hours) scale it down, as do feels-like temperatures below 20°C or above 32°C. Feels-like includes sun, wind and humidity. Buckets only count hours between sunrise and 15 minutes after sunset. Wind from the bay (S–SW, onshore) counts up to 15% stronger; wind from the land (N–NE, offshore) up to 25% weaker, since the beach is sheltered from it.</div>
     <div><strong>Epic</strong> ≥ 8.5 · <strong>Go</strong> ≥ 7 · <strong>Decent</strong> ≥ 5 · <strong>Meh</strong> ≥ 3 · <strong>Skip</strong> below. Bucket cards show the median across members and the likely range (middle half of members).</div>
-    <div>Data: Open-Meteo ensemble API (ECMWF IFS 0.25°); sunrise and sunset from the Open-Meteo forecast API.</div>
+    <div>Data: Open-Meteo ensemble API (ECMWF IFS 0.25°); sunrise and sunset calculated for the beach.</div>
   </footer>
 </div>
 
@@ -126,15 +126,15 @@ const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window
 
 
 // ---------- Analysis ----------
-function hourlyStats({ time, members }, sun) {
+function hourlyStats({ time, members }) {
   return time.map((t, i) => {
     const hs = members.map(m => memberHour(m, i)).filter(h => h.wind != null && h.temp != null);
-    const day = t.slice(0, 10), h = +t.slice(11, 13), [rise, set] = sun[day] ?? [6, 20];
+    const day = t.slice(0, 10), h = +t.slice(11, 13), [rise, set] = sunTimes(day);
     const r = hs.map(hourScore), gusts = hs.map(x => x.gust).filter(g => g != null);
     return { t, day, h, daylight: h + 1 > rise && h < set, n: hs.length,
       med: pctile(r, .5), p25: pctile(r, .25), p75: pctile(r, .75), p10: pctile(r, .1), p90: pctile(r, .9),
       wind: pctile(hs.map(x => x.wind), .5), gust: gusts.length ? pctile(gusts, .5) : null,
-      dir: circMean(hs.map(x => x.dir)), temp: pctile(hs.map(x => x.temp), .5),
+      dir: circMean(hs.map(x => x.dir)), temp: pctile(hs.map(x => x.temp), .5), feels: pctile(hs.map(x => x.feels ?? x.temp), .5),
       pRain: hs.length ? hs.filter(x => x.rain >= 0.2).length / hs.length : 0 };
   });
 }
@@ -236,7 +236,7 @@ function setFocus(i, scrollTo) {
     ${t ? `<span class="pill ${t.key}">${t.label} ${x.med.toFixed(1)}</span><span><span class="k">likely</span> ${x.p25.toFixed(1)}–${x.p75.toFixed(1)}</span>` : ""}
     <span><span class="k">wind</span> ${Math.round(x.wind)} km/h ${compass(x.dir)}</span>
     <span><span class="k">gusts</span> ${x.gust != null ? Math.round(x.gust) + " km/h" : "n/a"}</span>
-    <span><span class="k">temp</span> ${Math.round(x.temp)}°C</span>
+    <span><span class="k">temp</span> ${Math.round(x.temp)}°C <span class="k">feels</span> ${Math.round(x.feels)}°</span>
     <span><span class="k">rain</span> ${Math.round(x.pRain * 100)}%</span>`;
   if (scrollTo) { const box = document.getElementById("chart-scroll"); box.scrollLeft = Math.max(0, X(i) - box.clientWidth / 3); }
 }
@@ -273,6 +273,10 @@ function renderForecast() {
     const grid = sec.querySelector(".grid");
     for (const b of w.blocks) {
       const c = document.createElement("article"); c.className = "card";
+      if (b.dark) {
+        c.innerHTML = `<div><h3>${b.name}</h3><div class="when">${fmtDay(b.day)} · ${hr(b.start)}–${hr(b.end)}</div></div><div class="verdict"><span class="pill na">Dark</span></div><div class="conf">Sunset ${hm(b.sunset)}, so no daylight in this window.</div>`;
+        grid.append(c); continue;
+      }
       if (b.missing || !b.scores?.length) {
         c.innerHTML = `<h3>${b.name}</h3><div class="verdict"><span class="pill na">No data</span></div><div class="conf">Past or beyond the forecast range.</div>`;
         grid.append(c); continue;
@@ -280,14 +284,14 @@ function renderForecast() {
       const t = tierOf(b.med);
       const conf = b.lead > 7 ? `Low confidence (day ${b.lead})` : b.iqr < 1.2 ? "High confidence" : b.iqr < 2.5 ? "Medium confidence" : "Low confidence, members disagree";
       c.innerHTML = `
-        <div><h3>${b.name}</h3><div class="when">${fmtDay(b.day)} · ${hr(b.start)}–${hr(b.end)}</div></div>
+        <div><h3>${b.name}</h3><div class="when">${fmtDay(b.day)} · ${hr(b.playStart)}–${hr(b.playEnd)}${b.clipped ? ` · sunset ${hm(b.sunset)}` : ""}</div></div>
         <div class="verdict"><span class="pill ${t.key}">${t.label}</span><div class="pct">${b.med.toFixed(1)}<span>likely ${b.lo.toFixed(1)}–${b.hi.toFixed(1)}</span></div></div>
         <div class="strip" role="img" aria-label="Ensemble ratings, median ${b.med.toFixed(1)} of 10">
           ${b.scores.map(s => `<i style="left:${s * 10}%"></i>`).join("")}<b style="left:${b.med * 10}%"></b></div>
         <dl>
           <dt>Wind</dt><dd>${Math.round(b.wind)} km/h ${compass(b.dir)}</dd>
           <dt>Gusts</dt><dd>${b.gust != null ? Math.round(b.gust) + " km/h" : "n/a"}</dd>
-          <dt>Temp</dt><dd>${Math.round(b.temp)}°C</dd>
+          <dt>Temp</dt><dd>${Math.round(b.temp)}°C (feels ${Math.round(b.feels)})</dd>
           <dt>Rain</dt><dd>${Math.round(b.pRain * 100)}%</dd>
         </dl>
         <div class="conf">${conf}</div>`;
@@ -301,9 +305,9 @@ async function run(useDemo) {
   const st = document.getElementById("status");
   st.className = "status"; st.textContent = "Loading forecast…";
   try {
-    const [json, sun] = useDemo ? [demoData(), {}] : await Promise.all([fetchEnsemble(), fetchSun()]);
+    const json = useDemo ? demoData() : await fetchEnsemble();
     const data = toMembers(json);
-    forecast = { hours: hourlyStats(data, sun), buckets: weekendBuckets(data), now: nowMelb() };
+    forecast = { hours: hourlyStats(data), buckets: weekendBuckets(data), now: nowMelb() };
     renderForecast();
     st.textContent = useDemo ? "Showing made-up demo data, not a forecast." :
       `Live forecast · ${data.members.length} ensemble members · loaded ${new Date().toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
@@ -340,15 +344,18 @@ function analysePast(json, fri) {
   const get = (v, n, i) => H[`${v}_previous_day${n}`]?.[i];
   return BLOCKS.map(b => {
     const day = addDays(fri, { 5: 0, 6: 1, 0: 2 }[b.dow]);
-    const idx = time.map((t, i) => [t, i]).filter(([t]) => t.slice(0, 10) === day && +t.slice(11, 13) >= b.start && +t.slice(11, 13) < b.end).map(([, i]) => i);
+    const idx = time.map((t, i) => [t, i]).filter(([t]) => { const h = +t.slice(11, 13);
+      return t.slice(0, 10) === day && h >= b.start && h < b.end && playable(day, h); }).map(([, i]) => i);
+    if (!idx.length) return { ...b, day, dark: true, sunset: sunTimes(day)[1], rows: [] };
     const rows = LEADS.map(n => {
       const hs = idx.map(i => ({ wind: get("wind_speed_10m", n, i), dir: get("wind_direction_10m", n, i) ?? 180,
-        gust: get("wind_gusts_10m", n, i), temp: get("temperature_2m", n, i), rain: get("precipitation", n, i) ?? 0 }))
+        gust: get("wind_gusts_10m", n, i), temp: get("temperature_2m", n, i), feels: get("apparent_temperature", n, i) ?? undefined,
+        rain: get("precipitation", n, i) ?? 0, wetness: wetness(H[`precipitation_previous_day${n}`], i) }))
         .filter(h => h.wind != null && h.temp != null);
       if (!hs.length) return { n, missing: true };
       return { n, score: hs.reduce((a, h) => a + hourScore(h), 0) / hs.length,
         wind: hs.reduce((a, h) => a + h.wind, 0) / hs.length, dir: circMean(hs.map(h => h.dir)),
-        temp: hs.reduce((a, h) => a + h.temp, 0) / hs.length, rain: hs.reduce((a, h) => a + h.rain, 0) };
+        temp: hs.reduce((a, h) => a + (h.feels ?? h.temp), 0) / hs.length, rain: hs.reduce((a, h) => a + h.rain, 0) };
     });
     return { ...b, day, rows };
   });
@@ -366,9 +373,10 @@ function renderPast(blocks, fri) {
       if (r.missing) return `<div class="bt-row${r.n === 0 ? " actual" : ""}"><span class="lbl">${lbl}</span><span class="pill na">n/a</span><span class="sc">–</span><span class="wx"></span></div>`;
       const t = tierOf(r.score);
       return `<div class="bt-row${r.n === 0 ? " actual" : ""}"><span class="lbl">${lbl}</span><span class="pill ${t.key}">${t.label}</span><span class="sc">${r.score.toFixed(1)}</span>
-        <span class="wx">${Math.round(r.wind)} ${compass(r.dir)} · ${Math.round(r.temp)}°${r.rain >= 0.2 ? " · " + r.rain.toFixed(1) + "mm" : ""}</span></div>`;
+        <span class="wx">${Math.round(r.wind)} ${compass(r.dir)} · feels ${Math.round(r.temp)}°${r.rain >= 0.2 ? " · " + r.rain.toFixed(1) + "mm" : ""}</span></div>`;
     }).join("");
-    c.innerHTML = `<div><h3>${b.name}</h3><div class="when">${fmtDay(b.day)} · ${hr(b.start)}–${hr(b.end)}</div></div><div class="bt">${rows}</div>`;
+    c.innerHTML = `<div><h3>${b.name}</h3><div class="when">${fmtDay(b.day)} · ${hr(b.start)}–${hr(b.end)}</div></div>` +
+      (b.dark ? `<div class="conf">Sunset ${hm(b.sunset)}, so no daylight in this window.</div>` : `<div class="bt">${rows}</div>`);
     grid.append(c);
   }
   out.append(sec);
@@ -419,6 +427,7 @@ function demoData() {
     let seed = m * 9301 + 49297; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280 - .5;
     const off = rnd() * 8;
     hourly["temperature_2m" + sfx] = time.map((t, i) => 19 + 6 * Math.sin((+t.slice(11, 13) - 9) / 24 * 2 * Math.PI) + off * (1 + i / 120) * .4);
+    hourly["apparent_temperature" + sfx] = hourly["temperature_2m" + sfx].map(t => t + 2);
     hourly["wind_speed_10m" + sfx] = time.map((t, i) => Math.max(1, 12 + 9 * Math.sin(i / 30) + 4 * Math.sin((+t.slice(11, 13) - 6) / 24 * 2 * Math.PI) + rnd() * 5 * (1 + i / 120)));
     hourly["wind_direction_10m" + sfx] = time.map((t, i) => (200 + 120 * Math.sin(i / 50) + rnd() * 40 + 360) % 360);
     hourly["wind_gusts_10m" + sfx] = hourly["wind_speed_10m" + sfx].map(w => w * 1.5);
