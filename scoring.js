@@ -46,18 +46,24 @@ function wetness(getP, i) {
 const GUST_BIAS = 5;                            // km/h
 // Gustiness: how far gusts rise above the average wind. Players can adjust to steady wind; sudden changes they can't.
 const gustExcess = h => Math.max(0, (h.gust ?? h.wind * 1.4) - h.wind);
-// 0–10 "worth going" rating for one hour. Calm, steady wind drives it; feels-like temperature, rain and wet sand scale it down.
+// ---------- Rating factors (each one is plotted on the page) ----------
+// Effective wind (km/h, after direction) → base rating 0–10. Glassy = 10; still rewards calm below 12.
+const windRating = eff => curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);
+// Gusts above the average wind (km/h) → points off. The gust is the hour's single strongest ~3 s puff and most of the
+// hour sits near the average, so gustiness costs only a little unless it's extreme.
+const gustPenalty = excess => curve(excess, [[8, 0], [15, 0.5], [25, 1.5], [35, 3]]);
+// Feels-like temperature (°C) → multiplier. Includes sun, wind and humidity. 18–32°C no penalty.
+const tempFactor = feels => curve(feels, [[10, 0.3], [18, 1], [32, 1], [35, 0.75], [40, 0.3]]);
+// Rain this hour (mm) → multiplier. A few drops are fine; steady rain isn't.
+const rainFactor = mm => curve(mm, [[0.2, 1], [0.5, 0.85], [1, 0.6], [3, 0.3]]);
+// Recency-weighted rain over the previous 12 hours (mm) → multiplier, for soggy, heavy sand.
+const wetFactor = mm => curve(mm, [[2, 1], [5, 0.8], [10, 0.55]]);
+
+// 0–10 "worth going" rating for one hour.
 function hourScore(h) {
-  const eff = h.wind * dirFactor(h.dir);                                // km/h, adjusted for shelter
-  const windR = curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);     // glassy = 10, still rewarding calm below 12
-  // The gust is the single strongest ~3 s puff in the hour; most of the hour sits near the average. So gustiness
-  // costs only a little unless it's extreme. Strong average wind is already handled by windR.
-  const gustPen = curve(gustExcess(h), [[8, 0], [15, 0.5], [25, 1.5], [35, 3]]);
-  const feels = h.feels ?? h.temp;                                      // apparent temp: sun, wind and humidity included
-  const tempM = curve(feels, [[10, 0.3], [18, 1], [32, 1], [35, 0.75], [40, 0.3]]);   // 18–32°C no penalty
-  const rainM = curve(h.rain, [[0.2, 1], [0.5, 0.85], [1, 0.6], [3, 0.3]]);   // a few drops are fine; steady rain isn't
-  const wetM = curve(h.wetness ?? 0, [[2, 1], [5, 0.8], [10, 0.55]]);         // soggy, heavy sand after earlier rain
-  return Math.max(0, Math.min(10, (windR - gustPen) * tempM * rainM * wetM));
+  const base = windRating(h.wind * dirFactor(h.dir)) - gustPenalty(gustExcess(h));
+  const mult = tempFactor(h.feels ?? h.temp) * rainFactor(h.rain) * wetFactor(h.wetness ?? 0);
+  return Math.max(0, Math.min(10, base * mult));
 }
 
 // ---------- Helpers ----------
@@ -208,5 +214,5 @@ if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, dirFactor, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
   wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, toMembers, memberHour, weekendBuckets,
-  GUST_BIAS, gustExcess, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
+  GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };

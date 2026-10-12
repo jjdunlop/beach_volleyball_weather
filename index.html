@@ -96,10 +96,23 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
 .bt-row.actual .lbl { color: var(--ink); font-weight: 600 }
 @media (max-width: 520px) { .bt-grid { grid-template-columns: 1fr } }
 
-.legend { font-size: .85rem; color: var(--muted); display: grid; gap: 6px; max-width: 75ch }
+.legend { font-size: .85rem; color: var(--muted); display: grid; gap: 6px; min-width: 0 }
 .legend h2 { font: 700 1.1rem/1 var(--display); text-transform: uppercase; letter-spacing: .06em; color: var(--ink); margin: 0 }
 .legend p { margin: 0 }
-.bounds { border-collapse: collapse; font-variant-numeric: tabular-nums }
+.bounds { border-collapse: collapse; font-variant-numeric: tabular-nums; margin-top: 4px }
+#howto summary { cursor: pointer; font: 700 1.1rem/1.2 var(--display); text-transform: uppercase; letter-spacing: .06em; color: var(--ink); padding: 6px 0 }
+#howto summary:focus-visible { outline: 3px solid var(--maybe); outline-offset: 2px }
+.howto { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 16px; align-items: start; margin: 8px 0 12px }
+@media (max-width: 720px) { .howto { grid-template-columns: minmax(0, 1fr) } }
+.polar-fig { margin: 0; display: grid; gap: 6px; justify-items: center }
+.polar-fig canvas { width: 100%; max-width: 340px; height: auto; aspect-ratio: 1; touch-action: none; cursor: crosshair }
+.tierkey { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center; font-size: .78rem }
+.tierkey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px }
+.polar-fig figcaption { font-size: .82rem; text-align: center; min-height: 2.6em; font-variant-numeric: tabular-nums }
+.minis { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 10px }
+.minis svg { width: 100%; height: auto; display: block; background: var(--card); border: 1px solid var(--line); border-radius: 8px }
+.minis text { font: 11px var(--body); fill: var(--muted) }
+.minis .ttl { font: 700 12px var(--display); letter-spacing: .05em; text-transform: uppercase; fill: var(--ink) }
 .bounds th { text-align: left; font-weight: 600; color: var(--ink); padding: 3px 14px 3px 0; white-space: nowrap; vertical-align: top }
 .bounds td { padding: 3px 0 }
 </style>
@@ -118,7 +131,16 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </header>
   <main id="out"></main>
   <footer class="legend">
-    <h2>Scoring</h2>
+    <details id="howto">
+    <summary>How scoring works</summary>
+    <div class="howto">
+      <figure class="polar-fig">
+        <canvas id="polar" width="340" height="340" role="img" aria-label="Rating by wind speed and the direction it comes from"></canvas>
+        <div class="tierkey" id="tierkey"></div>
+        <figcaption><span id="polar-read">Steady wind, 24°C, dry. Hover or tap to read a point.</span></figcaption>
+      </figure>
+      <div class="minis" id="minis"></div>
+    </div>
     <table class="bounds">
       <tr><th>Tiers</th><td>Epic ≥ 8.5 · Solid ≥ 7 · Decent ≥ 5 · Meh ≥ 3 · Crap &lt; 3</td></tr>
       <tr><th>Wind</th><td>≤ 5 km/h → 10 · 12 → 7.5 · 25 → 2 · ≥ 32 → 0</td></tr>
@@ -129,6 +151,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
       <tr><th>Wet sand (12 h)</th><td>&lt; 2 mm ×1 · 5 ×0.8 · 10 ×0.55</td></tr>
       <tr><th>Sessions</th><td>Daylight only · 75% average hour + 25% worst</td></tr>
     </table>
+    </details>
     <p>ECMWF 51-member ensemble via Open-Meteo. Line = median, band = likely range.</p>
   </footer>
 </div>
@@ -448,6 +471,86 @@ function demoData() {
   }
   return { hourly };
 }
+
+// ---------- How scoring works: graphs drawn from scoring.js ----------
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function drawPolar(readAt) {
+  const cv = document.getElementById("polar"), dpr = window.devicePixelRatio || 1;
+  const S = Math.min(340, cv.parentElement.clientWidth || 340);
+  cv.width = Math.round(S * dpr); cv.height = Math.round(S * dpr);
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const c = S / 2, R = c - 24, MAX = 35;                       // km/h at the rim
+  const col = Object.fromEntries(TIERS.map(t => [t.key, cssVar(TIER_COLOR[t.key])]));
+  ctx.clearRect(0, 0, S, S);
+  const step = 1;
+  for (let y = 0; y < S; y += step) for (let x = 0; x < S; x += step) {
+    const dx = x + step / 2 - c, dy = y + step / 2 - c, r = Math.hypot(dx, dy);
+    if (r > R) continue;
+    const spd = r / R * MAX, dir = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    ctx.fillStyle = col[tierOf(windRating(spd * dirFactor(dir))).key];
+    ctx.fillRect(x, y, step, step);
+  }
+  // Rings, shoreline, labels
+  ctx.strokeStyle = cssVar("--card"); ctx.lineWidth = 1; ctx.fillStyle = cssVar("--card");
+  ctx.font = "600 10px " + cssVar("--body");
+  for (const k of [10, 20, 30]) {
+    ctx.beginPath(); ctx.arc(c, c, k / MAX * R, 0, 2 * Math.PI); ctx.globalAlpha = .7; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillText(k + "", c + 3, c - k / MAX * R + 11);
+  }
+  const shore = (BEACH_FACES + 90) * Math.PI / 180;
+  ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = cssVar("--ink");
+  ctx.beginPath(); ctx.moveTo(c + Math.sin(shore) * R, c - Math.cos(shore) * R); ctx.lineTo(c - Math.sin(shore) * R, c + Math.cos(shore) * R); ctx.stroke();
+  ctx.setLineDash([]);
+  const lab = (txt, deg, rr) => { const a = deg * Math.PI / 180; ctx.fillText(txt, c + Math.sin(a) * rr - ctx.measureText(txt).width / 2, c - Math.cos(a) * rr + 4); };
+  ctx.fillStyle = cssVar("--ink"); ctx.font = "700 11px " + cssVar("--display");
+  lab("FROM THE BAY", BEACH_FACES, R * 0.62); lab("FROM THE CITY", (BEACH_FACES + 180) % 360, R * 0.62);
+  ctx.fillStyle = cssVar("--muted"); ctx.font = "700 12px " + cssVar("--display");
+  for (const [t, d] of [["N", 0], ["E", 90], ["S", 180], ["W", 270]]) lab(t, d, R + 13);
+  if (readAt) { ctx.strokeStyle = cssVar("--ink"); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(readAt.x, readAt.y, 5, 0, 2 * Math.PI); ctx.stroke(); }
+  cv.onpointermove = cv.onpointerdown = e => {
+    const b = cv.getBoundingClientRect(), x = (e.clientX - b.left) * S / b.width, y = (e.clientY - b.top) * S / b.height;
+    const r = Math.hypot(x - c, y - c); if (r > R) return;
+    const spd = r / R * MAX, dir = (Math.atan2(x - c, -(y - c)) * 180 / Math.PI + 360) % 360, v = windRating(spd * dirFactor(dir));
+    document.getElementById("polar-read").textContent = `${Math.round(spd)} km/h from the ${compass(dir)} → ${v.toFixed(1)} ${tierOf(v).label}`;
+    drawPolar({ x, y });
+  };
+}
+
+function miniChart({ title, x0, x1, xTicks, xLabel, y0, y1, yTicks, fn, yFmt = v => v }) {
+  const W = 300, H = 170, L = 36, Rm = 10, T = 26, B = 32, pw = W - L - Rm, ph = H - T - B;
+  const X = x => L + (x - x0) / (x1 - x0) * pw, Y = y => T + (1 - (y - y0) / (y1 - y0)) * ph;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}"><text class="ttl" x="10" y="17">${title}</text>`;
+  for (const t of yTicks) s += `<line x1="${L}" x2="${W - Rm}" y1="${Y(t)}" y2="${Y(t)}" style="stroke:var(--line)"/><text x="${L - 5}" y="${Y(t) + 4}" text-anchor="end">${yFmt(t)}</text>`;
+  for (const t of xTicks) s += `<text x="${X(t)}" y="${H - B + 15}" text-anchor="middle">${t}</text>`;
+  s += `<text x="${L + pw / 2}" y="${H - 4}" text-anchor="middle">${xLabel}</text>`;
+  const pts = Array.from({ length: 121 }, (_, i) => { const x = x0 + (x1 - x0) * i / 120; return `${X(x).toFixed(1)},${Y(fn(x)).toFixed(1)}`; });
+  s += `<path d="M${pts.join("L")}" fill="none" style="stroke:var(--bay)" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
+  return s;
+}
+
+function drawKey() {
+  document.getElementById("tierkey").innerHTML = TIERS.map(t => `<span><i style="background:var(${TIER_COLOR[t.key]})"></i>${t.label}</span>`).join("");
+}
+function drawMinis() {
+  const pct = v => v === 1 ? "×1" : "×" + v;
+  document.getElementById("minis").innerHTML = [
+    miniChart({ title: "Gusts (points off)", x0: 0, x1: 40, xTicks: [0, 10, 20, 30, 40], xLabel: "gust above average wind (km/h)",
+      y0: -4, y1: 0, yTicks: [0, -1, -2, -3, -4], fn: x => -gustPenalty(x), yFmt: v => v ? "−" + -v : "0" }),
+    miniChart({ title: "Feels-like temperature", x0: 5, x1: 42, xTicks: [10, 18, 25, 32, 40], xLabel: "°C",
+      y0: 0, y1: 1, yTicks: [0, 0.5, 1], fn: tempFactor, yFmt: pct }),
+    miniChart({ title: "Rain this hour", x0: 0, x1: 4, xTicks: [0, 1, 2, 3, 4], xLabel: "mm",
+      y0: 0, y1: 1, yTicks: [0, 0.5, 1], fn: rainFactor, yFmt: pct }),
+    miniChart({ title: "Wet sand", x0: 0, x1: 12, xTicks: [0, 3, 6, 9, 12], xLabel: "rain in previous 12 h, recent weighted (mm)",
+      y0: 0, y1: 1, yTicks: [0, 0.5, 1], fn: wetFactor, yFmt: pct }),
+  ].join("");
+}
+
+const howto = document.getElementById("howto");
+const drawHowto = () => { if (howto.open) { drawPolar(); drawMinis(); drawKey(); } };
+howto.addEventListener("toggle", drawHowto);
+window.addEventListener("resize", () => { clearTimeout(drawHowto.t); drawHowto.t = setTimeout(drawHowto, 200); });
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawHowto); } catch {}
 
 setRange(7);
 run(false);
