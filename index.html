@@ -96,14 +96,18 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
 .bt-row.actual .lbl { color: var(--ink); font-weight: 600 }
 @media (max-width: 520px) { .bt-grid { grid-template-columns: 1fr } }
 
-.legend { font-size: .85rem; color: var(--muted); display: grid; gap: 4px; max-width: 75ch }
+.legend { font-size: .85rem; color: var(--muted); display: grid; gap: 6px; max-width: 75ch }
+.legend h2 { font: 700 1.1rem/1 var(--display); text-transform: uppercase; letter-spacing: .06em; color: var(--ink); margin: 0 }
+.legend p { margin: 0 }
+.bounds { border-collapse: collapse; font-variant-numeric: tabular-nums }
+.bounds th { text-align: left; font-weight: 600; color: var(--ink); padding: 3px 14px 3px 0; white-space: nowrap; vertical-align: top }
+.bounds td { padding: 3px 0 }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>South Melbourne Beach Volley</h1>
-    <p>How worth going it is, rated 0–10 hour by hour from the ECMWF 51-member ensemble. The line is the median rating; the shaded band is where most members sit, so a narrow band means a confident forecast.</p>
     <nav class="modes" aria-label="View">
       <button id="m-up" class="tab on">Forecast</button>
       <button id="m-bt" class="tab">Past weekends</button>
@@ -114,10 +118,18 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </header>
   <main id="out"></main>
   <footer class="legend">
-    <div><strong>Rating</strong> (0–10): calm, steady wind drives it, so near-glassy conditions score 10 and every extra km/h costs points. Gustiness (gusts well above the average wind) costs extra, since sudden changes are what throw sets and serves off. Model gusts are reduced by 5 km/h to correct ECMWF's known over-forecast. "Gusty" is the chance of gusts 10+ km/h above the average. Gusts, rain and wet sand (rain in the previous 12 hours) scale it down, as do feels-like temperatures below 18°C or above 32°C. Feels-like includes sun, wind and humidity. Buckets only count hours between sunrise and 15 minutes after sunset. Wind from the bay (S–SW, onshore) counts up to 15% stronger; wind from the land (N–NE, offshore) up to 25% weaker, since the beach is sheltered from it.</div>
-    <div><strong>Holding up:</strong> an hour can't score higher than the average of itself and its neighbours, because forecast timing is often out by an hour and a brief lull is hard to plan around. A bucket's score is 75% its average hour and 25% its worst hour, so Epic means the whole window holds.</div>
-    <div><strong>Epic</strong> ≥ 8.5 · <strong>Solid</strong> ≥ 7 · <strong>Decent</strong> ≥ 5 · <strong>Meh</strong> ≥ 3 · <strong>Crap</strong> below. Bucket cards show the median across members and the likely range (middle half of members).</div>
-    <div>Data: Open-Meteo ensemble API (ECMWF IFS 0.25°); sunrise and sunset calculated for the beach.</div>
+    <h2>Scoring</h2>
+    <table class="bounds">
+      <tr><th>Tiers</th><td>Epic ≥ 8.5 · Solid ≥ 7 · Decent ≥ 5 · Meh ≥ 3 · Crap &lt; 3</td></tr>
+      <tr><th>Wind</th><td>≤ 5 km/h → 10 · 12 → 7.5 · 25 → 2 · ≥ 32 → 0</td></tr>
+      <tr><th>Direction</th><td>SW ×1.15 · S ×1.09 · N ×0.81 · NE ×0.75</td></tr>
+      <tr><th>Gusts above avg</th><td>≤ 8 km/h 0 · 15 −0.5 · 25 −1.5 · 35 −3 (model gusts −5 km/h)</td></tr>
+      <tr><th>Feels-like</th><td>18–32°C ×1 · 10°C ×0.3 · 35°C ×0.75 · 40°C ×0.3</td></tr>
+      <tr><th>Rain</th><td>&lt; 0.2 mm ×1 · 0.5 ×0.85 · 1 ×0.6 · 3 ×0.3</td></tr>
+      <tr><th>Wet sand (12 h)</th><td>&lt; 2 mm ×1 · 5 ×0.8 · 10 ×0.55</td></tr>
+      <tr><th>Sessions</th><td>Daylight only · 75% average hour + 25% worst</td></tr>
+    </table>
+    <p>ECMWF 51-member ensemble via Open-Meteo. Line = median, band = likely range.</p>
   </footer>
 </div>
 
@@ -252,13 +264,13 @@ function renderForecast() {
   const out = document.getElementById("out");
   out.innerHTML = `
     <section>
-      <h2>Next ${rangeDays} days <small>tap or hover the chart for any hour</small></h2>
+      <h2>Next ${rangeDays} days</h2>
       <div class="chart-box"><div class="chart-scroll" id="chart-scroll"></div><div class="readout" id="readout"></div></div>
       <div class="chart-legend">
         <span><i style="background:var(--ink);opacity:.25"></i>likely range</span>
         <span><i style="background:var(--night)"></i>night</span>      </div>
     </section>
-    <section><h2>Best windows <small>this week, ${BEST_MIN_HOURS}h+ rated ${BEST_MIN_RATING}+</small></h2><div class="windows" id="windows"></div></section>`;
+    <section><h2>Best windows</h2><div class="windows" id="windows"></div></section>`;
   drawChart(hours, buckets, rangeDays, now);
 
   const wins = bestWindows(hours, now, 7), wEl = document.getElementById("windows");
@@ -272,7 +284,7 @@ function renderForecast() {
 
   buckets.forEach((w, wi) => {
     const sec = document.createElement("section");
-    sec.innerHTML = `<h2>${wi === 0 ? "This weekend" : "Next weekend"} <small>from ${fmtDay(w.fri)}</small></h2><div class="grid"></div>`;
+    sec.innerHTML = `<h2>${wi === 0 ? "This weekend" : "Next weekend"}</h2><div class="grid"></div>`;
     const grid = sec.querySelector(".grid");
     for (const b of w.blocks) {
       const c = document.createElement("article"); c.className = "card";
@@ -314,7 +326,7 @@ async function run(useDemo) {
     forecast = { hours: hourlyStats(data), buckets: weekendBuckets(data), now: nowMelb() };
     renderForecast();
     st.textContent = useDemo ? "Showing made-up demo data, not a forecast." :
-      `Live forecast · ${data.members.length} ensemble members · loaded ${new Date().toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
+      `Updated ${new Date().toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
   } catch (e) {
     st.className = "status err";
     st.innerHTML = `Couldn't load the forecast (${e.message}). Check your connection and reload. <button id="demo" class="ghost">Show demo data</button>`;
@@ -365,7 +377,7 @@ function analysePast(json, fri) {
 function renderPast(blocks, fri) {
   const out = document.getElementById("out"); out.innerHTML = "";
   const sec = document.createElement("section");
-  sec.innerHTML = `<h2>Weekend of ${fmtDay(fri)} <small>what ECMWF said, by days ahead</small></h2><div class="grid bt-grid"></div>`;
+  sec.innerHTML = `<h2>Weekend of ${fmtDay(fri)}</h2><div class="grid bt-grid"></div>`;
   const grid = sec.querySelector(".grid");
   for (const b of blocks) {
     const c = document.createElement("article"); c.className = "card";
@@ -389,7 +401,7 @@ async function runPast() {
   document.getElementById("bt-next").disabled = btFriday >= lastFinishedFriday();
   try {
     renderPast(analysePast(await fetchPast(btFriday), btFriday), btFriday);
-    st.textContent = "Single model (ECMWF IFS), not the ensemble: archived runs keep one forecast per lead time. \"On the day\" is the same-day run, a stand-in for what actually happened. Archive starts Jan 2024.";
+    st.textContent = "ECMWF forecasts made 7, 5, 3 and 1 days before, vs the same-day run.";
   } catch (e) {
     st.className = "status err"; st.textContent = `Couldn't load the archive (${e.message}).`;
   }
