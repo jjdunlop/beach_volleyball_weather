@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>South Melbourne Beach Volley</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+/* Layout: timeline chart first (scrolls sideways on phones), tap readout under it, then best windows, then weekend bucket cards. */
+:root {
+  --sand: #f6f1e7; --card: #fffdf8; --ink: #1d2a33; --muted: #5d6b73; --line: #e2d9c7; --night: #ece5d6;
+  --bay: #1f6f8b; --good: #2e8b57; --decent: #7a9a3a; --maybe: #c98a1a; --bad: #c0463a;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Source Sans 3", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --sand: #121a1f; --card: #1a242b; --ink: #e8e4da; --muted: #93a2aa; --line: #2b3943; --night: #141d23;
+  --bay: #5bb3d1; --good: #5cc48a; --decent: #a7c25a; --maybe: #e5ad47; --bad: #e57368; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --sand: #121a1f; --card: #1a242b; --ink: #e8e4da; --muted: #93a2aa; --line: #2b3943; --night: #141d23;
+  --bay: #5bb3d1; --good: #5cc48a; --decent: #a7c25a; --maybe: #e5ad47; --bad: #e57368; color-scheme: dark }
+
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body { margin: 0; background: var(--sand); color: var(--ink); font: 16px/1.45 var(--body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px; display: grid; gap: 24px }
+main { display: grid; gap: 24px; min-width: 0 }
+header h1 { font: 700 clamp(1.9rem, 6vw, 2.6rem)/1 var(--display); letter-spacing: .01em; margin: 0; text-wrap: balance }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 65ch }
+.status { font-size: .9rem; color: var(--muted) }
+.status.err { color: var(--bad) }
+section { min-width: 0 }
+section h2 { font: 700 1.35rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 10px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap }
+section h2 small { font: 400 .9rem var(--body); text-transform: none; letter-spacing: 0; color: var(--muted) }
+
+/* Controls */
+.modes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center }
+.modes span { display: flex; gap: 8px; flex-wrap: wrap }
+button { font: 600 .95rem var(--body); background: var(--bay); color: var(--card); border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; min-height: 40px }
+.tab, .ghost { background: transparent; color: var(--ink); border: 1px solid var(--line) }
+.tab.on { background: var(--bay); color: var(--card); border-color: var(--bay) }
+button:disabled { opacity: .4; cursor: default }
+button:focus-visible { outline: 3px solid var(--maybe); outline-offset: 2px }
+
+/* Chart */
+.chart-box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden }
+.chart-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain }
+.chart-scroll svg { display: block; touch-action: pan-x; cursor: crosshair }
+.chart-scroll text { font: 600 11px var(--body); fill: var(--muted) }
+.chart-scroll .daylbl { font: 700 13px var(--display); letter-spacing: .05em; fill: var(--ink); text-transform: uppercase }
+.chart-scroll .bktlbl { font: 700 10px var(--display); letter-spacing: .06em; fill: var(--bay); text-transform: uppercase }
+.readout { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; font-size: .9rem; font-variant-numeric: tabular-nums; min-height: 52px }
+.readout .t { font-weight: 600 }
+.readout .k { color: var(--muted) }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8rem; color: var(--muted); margin-top: 8px }
+.chart-legend i { display: inline-block; width: 18px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px }
+
+/* Pills */
+.pill { font: 700 .9rem var(--display); text-transform: uppercase; letter-spacing: .08em; padding: 2px 9px; border-radius: 99px; color: var(--card); white-space: nowrap }
+.pill.epic { background: var(--bay) } .pill.go { background: var(--good) } .pill.decent { background: var(--decent) }
+.pill.meh { background: var(--maybe) } .pill.skip { background: var(--bad) } .pill.na { background: var(--muted) }
+
+/* Best windows */
+.windows { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px }
+.win { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; text-align: left; color: var(--ink); font: inherit; min-height: 0 }
+.win b { font: 700 1.05rem var(--display); text-transform: uppercase; letter-spacing: .04em; display: block }
+.win span.sub { font-size: .82rem; color: var(--muted) }
+.win .r { font: 700 1.5rem/1 var(--display); font-variant-numeric: tabular-nums; text-align: right }
+.empty { color: var(--muted); font-size: .9rem }
+
+/* Bucket cards */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); gap: 10px }
+@media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 8px; min-width: 0; align-content: start }
+.card h3 { margin: 0; font: 700 1.1rem/1 var(--display); text-transform: uppercase; letter-spacing: .05em }
+.card .when { font-size: .78rem; color: var(--muted) }
+.verdict { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap }
+.pct { font: 700 1.6rem/1 var(--display); font-variant-numeric: tabular-nums; text-align: right }
+.pct span { font: 400 .72rem var(--body); color: var(--muted); display: block }
+.strip { position: relative; height: 22px; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--bad) 18%, transparent) 0 30%, color-mix(in srgb, var(--maybe) 18%, transparent) 30% 50%, color-mix(in srgb, var(--decent) 18%, transparent) 50% 70%, color-mix(in srgb, var(--good) 22%, transparent) 70% 85%, color-mix(in srgb, var(--bay) 26%, transparent) 85% 100%) }
+.strip i { position: absolute; top: 3px; width: 3px; height: 16px; margin-left: -1.5px; background: var(--ink); opacity: .3; border-radius: 2px }
+.strip b { position: absolute; top: 0; width: 3px; height: 22px; margin-left: -1.5px; background: var(--ink) }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: .85rem }
+dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap }
+.conf { font-size: .78rem; color: var(--muted) }
+
+/* Backtest rows */
+.bt { display: grid; gap: 5px; font-size: .85rem }
+.bt-row { display: grid; grid-template-columns: 5em auto 2em 1fr; gap: 6px; align-items: center }
+.bt-row .lbl { color: var(--muted) }
+.bt-row .pill { font-size: .7rem; padding: 1px 6px; text-align: center }
+.bt-row .sc { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600 }
+.bt-row .wx { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap }
+.bt-row.actual { border-top: 1px solid var(--line); padding-top: 5px; margin-top: 2px }
+.bt-row.actual .lbl { color: var(--ink); font-weight: 600 }
+@media (max-width: 520px) { .bt-grid { grid-template-columns: 1fr } }
+
+.legend { font-size: .85rem; color: var(--muted); display: grid; gap: 4px; max-width: 75ch }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>South Melbourne Beach Volley</h1>
+    <p>How worth going it is, rated 0–10 hour by hour from the ECMWF 51-member ensemble. The line is the median rating; the shaded band is where most members sit, so a narrow band means a confident forecast.</p>
+    <nav class="modes" aria-label="View">
+      <button id="m-up" class="tab on">Forecast</button>
+      <button id="m-bt" class="tab">Past weekends</button>
+      <span id="range-nav"><button id="r7" class="ghost on-range">7 days</button><button id="r15" class="ghost">15 days</button></span>
+      <span id="bt-nav" hidden><button id="bt-prev" class="ghost">◀ Earlier</button><button id="bt-next" class="ghost">Later ▶</button></span>
+    </nav>
+    <p class="status" id="status">Loading forecast…</p>
+  </header>
+  <main id="out"></main>
+  <footer class="legend">
+    <div><strong>Rating</strong> (0–10): calm wind drives it, so near-glassy conditions score 10 and every extra km/h costs points. Gusts and rain scale it down, as do temperatures below 20°C or above 32°C. Wind from the bay (S–SW, onshore) counts up to 15% stronger; wind from the land (N–NE, offshore) up to 25% weaker, since the beach is sheltered from it.</div>
+    <div><strong>Epic</strong> ≥ 8.5 · <strong>Go</strong> ≥ 7 · <strong>Decent</strong> ≥ 5 · <strong>Meh</strong> ≥ 3 · <strong>Skip</strong> below. Bucket cards show the median across members and the likely range (middle half of members).</div>
+    <div>Data: Open-Meteo ensemble API (ECMWF IFS 0.25°); sunrise and sunset from the Open-Meteo forecast API.</div>
+  </footer>
+</div>
+
+<script src="scoring.js"></script>
+<script>
+const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
+
+
+// ---------- Analysis ----------
+function hourlyStats({ time, members }, sun) {
+  return time.map((t, i) => {
+    const hs = members.map(m => memberHour(m, i)).filter(h => h.wind != null && h.temp != null);
+    const day = t.slice(0, 10), h = +t.slice(11, 13), [rise, set] = sun[day] ?? [6, 20];
+    const r = hs.map(hourScore), gusts = hs.map(x => x.gust).filter(g => g != null);
+    return { t, day, h, daylight: h + 1 > rise && h < set, n: hs.length,
+      med: pctile(r, .5), p25: pctile(r, .25), p75: pctile(r, .75), p10: pctile(r, .1), p90: pctile(r, .9),
+      wind: pctile(hs.map(x => x.wind), .5), gust: gusts.length ? pctile(gusts, .5) : null,
+      dir: circMean(hs.map(x => x.dir)), temp: pctile(hs.map(x => x.temp), .5),
+      pRain: hs.length ? hs.filter(x => x.rain >= 0.2).length / hs.length : 0 };
+  });
+}
+
+function bestWindows(hours, now, days) {
+  const end = addDays(now.slice(0, 10), days), out = [];
+  let run = [];
+  const flush = () => { if (run.length >= BEST_MIN_HOURS) out.push(run); run = []; };
+  for (const x of hours) {
+    if (x.t.slice(0, 13) < now || x.day >= end) { flush(); continue; }
+    if (x.daylight && x.med >= BEST_MIN_RATING && (!run.length || run[run.length - 1].day === x.day)) run.push(x);
+    else { flush(); if (x.daylight && x.med >= BEST_MIN_RATING) run.push(x); }
+  }
+  flush();
+  return out.map(r => ({ day: r[0].day, start: r[0].h, end: r[r.length - 1].h + 1, i0: hours.indexOf(r[0]),
+    avg: r.reduce((a, x) => a + x.med, 0) / r.length }))
+    .sort((a, b) => b.avg - a.avg).slice(0, 4).sort((a, b) => a.i0 - b.i0);
+}
+
+
+// ---------- Timeline chart ----------
+const SVGNS = "http://www.w3.org/2000/svg";
+const TIER_COLOR = { epic: "--bay", go: "--good", decent: "--decent", meh: "--maybe", skip: "--bad" };
+let chartState = null;
+
+function drawChart(hours, buckets, days, now, focusIdx) {
+  const box = document.getElementById("chart-scroll");
+  const start = hours.findIndex(x => x.day === now.slice(0, 10));
+  const hs = hours.slice(Math.max(0, start), Math.max(0, start) + days * 24);
+  const avail = box.clientWidth || 340;
+  const pxH = Math.max(avail / hs.length, window.innerWidth < 640 ? 5 : 2.6);     // phones scroll; desktop fits
+  const W = Math.round(pxH * hs.length), top = 30, ph = 200, bot = 26, H = top + ph + bot;
+  const X = i => i * pxH + pxH / 2, Y = r => top + ph * (1 - r / 10);
+  const tickStep = [3, 6, 12].find(st => st * pxH >= 26) ?? 12;     // densest time labels that fit
+  let s = `<svg xmlns="${SVGNS}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Hourly rating for the next ${days} days">`;
+  s += `<defs><linearGradient id="tierg" gradientUnits="userSpaceOnUse" x1="0" y1="${Y(10)}" x2="0" y2="${Y(0)}">`;
+  [[10, "epic"], [8.5, "epic"], [8.5, "go"], [7, "go"], [7, "decent"], [5, "decent"], [5, "meh"], [3, "meh"], [3, "skip"], [0, "skip"]]
+    .forEach(([r, k]) => s += `<stop offset="${(10 - r) / 10}" style="stop-color:var(${TIER_COLOR[k]})"/>`);
+  s += `</linearGradient></defs>`;
+  // Tier zones
+  [[10, 8.5, "epic"], [8.5, 7, "go"], [7, 5, "decent"], [5, 3, "meh"], [3, 0, "skip"]].forEach(([a, b, k]) =>
+    s += `<rect x="0" y="${Y(a)}" width="${W}" height="${Y(b) - Y(a)}" style="fill:var(${TIER_COLOR[k]});opacity:.07"/>`);
+  // Night shading
+  hs.forEach((x, i) => { if (!x.daylight) s += `<rect x="${i * pxH}" y="${top}" width="${pxH + .5}" height="${ph}" style="fill:var(--night)"/>`; });
+  // Gridlines + y labels at tier edges
+  [8.5, 7, 5, 3].forEach(r => s += `<line x1="0" x2="${W}" y1="${Y(r)}" y2="${Y(r)}" style="stroke:var(--line)" stroke-dasharray="2 4"/>`);
+  for (let d = 0; d < hs.length; d += 24) TIERS.forEach((t, k) => {   // tier names at the start of each day
+    const yMid = Y(((k ? TIERS[k - 1].min : 10) + t.min) / 2);
+    s += `<text x="${d * pxH + 4}" y="${yMid + 4}" style="fill:var(${TIER_COLOR[t.key]});opacity:.8;font-size:10px">${t.label}</text>`;
+  });
+  // Day separators and labels
+  hs.forEach((x, i) => {
+    if (x.h === 0) {
+      s += `<line x1="${i * pxH}" x2="${i * pxH}" y1="${top - 6}" y2="${top + ph}" style="stroke:var(--line)"/>`;
+      const lab = 24 * pxH > 70 ? fmtDay(x.day).replace(",", "") : new Date(x.day + "T12:00:00Z").toLocaleDateString("en-AU", { weekday: "narrow", timeZone: "UTC" }) + " " + +x.day.slice(8);
+      s += `<text class="daylbl" x="${i * pxH + 4}" y="${top - 12}">${lab}</text>`;
+    }
+    if (x.h && x.h % tickStep === 0) {
+      s += `<line x1="${i * pxH}" x2="${i * pxH}" y1="${top + ph}" y2="${top + ph + 4}" style="stroke:var(--muted)"/>`;
+      s += `<text x="${i * pxH}" y="${top + ph + 16}" text-anchor="middle">${x.h === 12 ? "noon" : hr(x.h)}</text>`;
+    }
+  });
+  // Bands and line, daylight segments only
+  const segs = []; let cur = [];
+  hs.forEach((x, i) => { if (x.daylight && !isNaN(x.med)) cur.push(i); else if (cur.length) { segs.push(cur); cur = []; } });
+  if (cur.length) segs.push(cur);
+  const area = (seg, lo, hi) => "M" + seg.map(i => `${X(i)},${Y(hs[i][hi])}`).join("L") + "L" + [...seg].reverse().map(i => `${X(i)},${Y(hs[i][lo])}`).join("L") + "Z";
+  for (const seg of segs) {
+    s += `<path d="${area(seg, "p10", "p90")}" style="fill:var(--ink);opacity:.06"/>`;
+    s += `<path d="${area(seg, "p25", "p75")}" style="fill:var(--ink);opacity:.12"/>`;
+    s += `<path d="M${seg.map(i => `${X(i)},${Y(hs[i].med)}`).join("L")}" fill="none" stroke="url(#tierg)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  // Now marker
+  const ni = hs.findIndex(x => x.t.slice(0, 13) === now);
+  if (ni >= 0) s += `<line x1="${X(ni)}" x2="${X(ni)}" y1="${top - 6}" y2="${top + ph}" style="stroke:var(--bad)" stroke-width="1.5"/><text x="${X(ni) + 3}" y="${top + 10}" style="fill:var(--bad)">now</text>`;
+  // Cursor
+  s += `<line id="cur" x1="0" x2="0" y1="${top}" y2="${top + ph}" style="stroke:var(--ink)" stroke-width="1" visibility="hidden"/><circle id="curdot" r="5" style="fill:var(--card);stroke:var(--ink)" stroke-width="2" visibility="hidden"/>`;
+  s += `</svg>`;
+  box.innerHTML = s;
+  chartState = { hs, pxH, X, Y };
+  const svg = box.querySelector("svg");
+  const pick = e => { const r = svg.getBoundingClientRect(); setFocus(Math.floor((e.clientX - r.left) / pxH)); };
+  svg.addEventListener("pointermove", pick);
+  svg.addEventListener("pointerdown", pick);
+  let f = hs.findIndex(x => x.t === hours[focusIdx]?.t);
+  if (f < 0) f = Math.max(0, hs.findIndex((x, i) => i >= ni && x.daylight));
+  setFocus(f, true);
+}
+
+function setFocus(i, scrollTo) {
+  const { hs, X, Y } = chartState; if (!hs[i]) return;
+  const x = hs[i], svg = document.querySelector("#chart-scroll svg");
+  const cur = svg.getElementById ? svg.getElementById("cur") : svg.querySelector("#cur"), dot = svg.querySelector("#curdot");
+  cur.setAttribute("x1", X(i)); cur.setAttribute("x2", X(i)); cur.setAttribute("visibility", "visible");
+  if (!isNaN(x.med)) { dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(x.med)); dot.setAttribute("visibility", "visible"); } else dot.setAttribute("visibility", "hidden");
+  const t = isNaN(x.med) ? null : tierOf(x.med);
+  document.getElementById("readout").innerHTML = `
+    <span class="t">${fmtDay(x.day)} · ${hr(x.h)}${x.daylight ? "" : " (dark)"}</span>
+    ${t ? `<span class="pill ${t.key}">${t.label} ${x.med.toFixed(1)}</span><span><span class="k">likely</span> ${x.p25.toFixed(1)}–${x.p75.toFixed(1)}</span>` : ""}
+    <span><span class="k">wind</span> ${Math.round(x.wind)} km/h ${compass(x.dir)}</span>
+    <span><span class="k">gusts</span> ${x.gust != null ? Math.round(x.gust) + " km/h" : "n/a"}</span>
+    <span><span class="k">temp</span> ${Math.round(x.temp)}°C</span>
+    <span><span class="k">rain</span> ${Math.round(x.pRain * 100)}%</span>`;
+  if (scrollTo) { const box = document.getElementById("chart-scroll"); box.scrollLeft = Math.max(0, X(i) - box.clientWidth / 3); }
+}
+
+// ---------- Render: forecast ----------
+let forecast = null, rangeDays = 7;
+
+function renderForecast() {
+  const { hours, buckets, now } = forecast;
+  const out = document.getElementById("out");
+  out.innerHTML = `
+    <section>
+      <h2>Next ${rangeDays} days <small>tap or hover the chart for any hour</small></h2>
+      <div class="chart-box"><div class="chart-scroll" id="chart-scroll"></div><div class="readout" id="readout"></div></div>
+      <div class="chart-legend">
+        <span><i style="background:var(--ink);opacity:.25"></i>likely range</span>
+        <span><i style="background:var(--night)"></i>night</span>      </div>
+    </section>
+    <section><h2>Best windows <small>this week, ${BEST_MIN_HOURS}h+ rated ${BEST_MIN_RATING}+</small></h2><div class="windows" id="windows"></div></section>`;
+  drawChart(hours, buckets, rangeDays, now);
+
+  const wins = bestWindows(hours, now, 7), wEl = document.getElementById("windows");
+  if (!wins.length) wEl.innerHTML = `<p class="empty">No stretch of ${BEST_MIN_HOURS}+ daylight hours rated ${BEST_MIN_RATING}+ this week.</p>`;
+  for (const w of wins) {
+    const t = tierOf(w.avg), b = document.createElement("button"); b.className = "win";
+    b.innerHTML = `<div><b>${fmtDay(w.day)}</b><span class="sub">${hr(w.start)}–${hr(w.end)}</span></div><div><span class="pill ${t.key}">${t.label}</span><div class="r">${w.avg.toFixed(1)}</div></div>`;
+    b.onclick = () => { const i = chartState.hs.findIndex(x => x.t === hours[w.i0].t); if (i >= 0) { setFocus(i, true); document.querySelector(".chart-box").scrollIntoView({ behavior: "smooth", block: "center" }); } };
+    wEl.append(b);
+  }
+
+  buckets.forEach((w, wi) => {
+    const sec = document.createElement("section");
+    sec.innerHTML = `<h2>${wi === 0 ? "This weekend" : "Next weekend"} <small>from ${fmtDay(w.fri)}</small></h2><div class="grid"></div>`;
+    const grid = sec.querySelector(".grid");
+    for (const b of w.blocks) {
+      const c = document.createElement("article"); c.className = "card";
+      if (b.missing || !b.scores?.length) {
+        c.innerHTML = `<h3>${b.name}</h3><div class="verdict"><span class="pill na">No data</span></div><div class="conf">Past or beyond the forecast range.</div>`;
+        grid.append(c); continue;
+      }
+      const t = tierOf(b.med);
+      const conf = b.lead > 7 ? `Low confidence (day ${b.lead})` : b.iqr < 1.2 ? "High confidence" : b.iqr < 2.5 ? "Medium confidence" : "Low confidence, members disagree";
+      c.innerHTML = `
+        <div><h3>${b.name}</h3><div class="when">${fmtDay(b.day)} · ${hr(b.start)}–${hr(b.end)}</div></div>
+        <div class="verdict"><span class="pill ${t.key}">${t.label}</span><div class="pct">${b.med.toFixed(1)}<span>likely ${b.lo.toFixed(1)}–${b.hi.toFixed(1)}</span></div></div>
+        <div class="strip" role="img" aria-label="Ensemble ratings, median ${b.med.toFixed(1)} of 10">
+          ${b.scores.map(s => `<i style="left:${s * 10}%"></i>`).join("")}<b style="left:${b.med * 10}%"></b></div>
+        <dl>
+          <dt>Wind</dt><dd>${Math.round(b.wind)} km/h ${compass(b.dir)}</dd>
+          <dt>Gusts</dt><dd>${b.gust != null ? Math.round(b.gust) + " km/h" : "n/a"}</dd>
+          <dt>Temp</dt><dd>${Math.round(b.temp)}°C</dd>
+          <dt>Rain</dt><dd>${Math.round(b.pRain * 100)}%</dd>
+        </dl>
+        <div class="conf">${conf}</div>`;
+      grid.append(c);
+    }
+    out.append(sec);
+  });
+}
+
+async function run(useDemo) {
+  const st = document.getElementById("status");
+  st.className = "status"; st.textContent = "Loading forecast…";
+  try {
+    const [json, sun] = useDemo ? [demoData(), {}] : await Promise.all([fetchEnsemble(), fetchSun()]);
+    const data = toMembers(json);
+    forecast = { hours: hourlyStats(data, sun), buckets: weekendBuckets(data), now: nowMelb() };
+    renderForecast();
+    st.textContent = useDemo ? "Showing made-up demo data, not a forecast." :
+      `Live forecast · ${data.members.length} ensemble members · loaded ${new Date().toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
+  } catch (e) {
+    st.className = "status err";
+    st.innerHTML = `Couldn't load the forecast (${e.message}). Check your connection and reload. <button id="demo" class="ghost">Show demo data</button>`;
+    document.getElementById("demo").onclick = () => run(true);
+  }
+}
+
+// ---------- Backtest: archived single-model forecasts (Previous Runs API) ----------
+// previous_dayN = the run made N days before each hour. day0 = same-day run, used as "what happened".
+const LEADS = [7, 5, 3, 1, 0];
+function lastFinishedFriday() {
+  const t = todayMelb(), dow = dowOf(t);
+  let back = (dow - 5 + 7) % 7; if (back < 3) back += 7;   // weekend must be over
+  return addDays(t, -back);
+}
+let btFriday = null;
+
+async function fetchPast(fri) {
+  const hourly = VARS.flatMap(v => LEADS.map(n => `${v}_previous_day${n}`));
+  const url = "https://previous-runs-api.open-meteo.com/v1/forecast?" + new URLSearchParams({
+    latitude: LAT, longitude: LON, hourly: hourly.join(","), models: "ecmwf_ifs025",
+    start_date: fri, end_date: addDays(fri, 2), timezone: TZ, wind_speed_unit: "kmh",
+  });
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("Archive service returned " + r.status);
+  return r.json();
+}
+
+function analysePast(json, fri) {
+  const H = json.hourly, time = H.time;
+  const get = (v, n, i) => H[`${v}_previous_day${n}`]?.[i];
+  return BLOCKS.map(b => {
+    const day = addDays(fri, { 5: 0, 6: 1, 0: 2 }[b.dow]);
+    const idx = time.map((t, i) => [t, i]).filter(([t]) => t.slice(0, 10) === day && +t.slice(11, 13) >= b.start && +t.slice(11, 13) < b.end).map(([, i]) => i);
+    const rows = LEADS.map(n => {
+      const hs = idx.map(i => ({ wind: get("wind_speed_10m", n, i), dir: get("wind_direction_10m", n, i) ?? 180,
+        gust: get("wind_gusts_10m", n, i), temp: get("temperature_2m", n, i), rain: get("precipitation", n, i) ?? 0 }))
+        .filter(h => h.wind != null && h.temp != null);
+      if (!hs.length) return { n, missing: true };
+      return { n, score: hs.reduce((a, h) => a + hourScore(h), 0) / hs.length,
+        wind: hs.reduce((a, h) => a + h.wind, 0) / hs.length, dir: circMean(hs.map(h => h.dir)),
+        temp: hs.reduce((a, h) => a + h.temp, 0) / hs.length, rain: hs.reduce((a, h) => a + h.rain, 0) };
+    });
+    return { ...b, day, rows };
+  });
+}
+
+function renderPast(blocks, fri) {
+  const out = document.getElementById("out"); out.innerHTML = "";
+  const sec = document.createElement("section");
+  sec.innerHTML = `<h2>Weekend of ${fmtDay(fri)} <small>what ECMWF said, by days ahead</small></h2><div class="grid bt-grid"></div>`;
+  const grid = sec.querySelector(".grid");
+  for (const b of blocks) {
+    const c = document.createElement("article"); c.className = "card";
+    const rows = b.rows.map(r => {
+      const lbl = r.n === 0 ? "On the day" : r.n + " day" + (r.n > 1 ? "s" : "") + " out";
+      if (r.missing) return `<div class="bt-row${r.n === 0 ? " actual" : ""}"><span class="lbl">${lbl}</span><span class="pill na">n/a</span><span class="sc">–</span><span class="wx"></span></div>`;
+      const t = tierOf(r.score);
+      return `<div class="bt-row${r.n === 0 ? " actual" : ""}"><span class="lbl">${lbl}</span><span class="pill ${t.key}">${t.label}</span><span class="sc">${r.score.toFixed(1)}</span>
+        <span class="wx">${Math.round(r.wind)} ${compass(r.dir)} · ${Math.round(r.temp)}°${r.rain >= 0.2 ? " · " + r.rain.toFixed(1) + "mm" : ""}</span></div>`;
+    }).join("");
+    c.innerHTML = `<div><h3>${b.name}</h3><div class="when">${fmtDay(b.day)} · ${hr(b.start)}–${hr(b.end)}</div></div><div class="bt">${rows}</div>`;
+    grid.append(c);
+  }
+  out.append(sec);
+}
+
+async function runPast() {
+  const st = document.getElementById("status");
+  st.className = "status"; st.textContent = "Loading archived forecasts…";
+  document.getElementById("bt-next").disabled = btFriday >= lastFinishedFriday();
+  try {
+    renderPast(analysePast(await fetchPast(btFriday), btFriday), btFriday);
+    st.textContent = "Single model (ECMWF IFS), not the ensemble: archived runs keep one forecast per lead time. \"On the day\" is the same-day run, a stand-in for what actually happened. Archive starts Jan 2024.";
+  } catch (e) {
+    st.className = "status err"; st.textContent = `Couldn't load the archive (${e.message}).`;
+  }
+}
+
+// ---------- Controls ----------
+function setMode(past) {
+  document.getElementById("m-up").classList.toggle("on", !past);
+  document.getElementById("m-bt").classList.toggle("on", past);
+  document.getElementById("bt-nav").hidden = !past;
+  document.getElementById("range-nav").hidden = past;
+  if (past) { btFriday ??= lastFinishedFriday(); runPast(); }
+  else if (forecast) renderForecast(); else run(false);
+}
+function setRange(d) {
+  rangeDays = d;
+  document.getElementById("r7").classList.toggle("tab", d === 7); document.getElementById("r7").classList.toggle("on", d === 7);
+  document.getElementById("r15").classList.toggle("tab", d === 15); document.getElementById("r15").classList.toggle("on", d === 15);
+  if (forecast) renderForecast();
+}
+document.getElementById("m-up").onclick = () => setMode(false);
+document.getElementById("m-bt").onclick = () => setMode(true);
+document.getElementById("r7").onclick = () => setRange(7);
+document.getElementById("r15").onclick = () => setRange(15);
+document.getElementById("bt-prev").onclick = () => { btFriday = addDays(btFriday, -7); runPast(); };
+document.getElementById("bt-next").onclick = () => { btFriday = addDays(btFriday, 7); runPast(); };
+let rsz; window.addEventListener("resize", () => { clearTimeout(rsz); rsz = setTimeout(() => { if (forecast && !document.getElementById("range-nav").hidden) renderForecast(); }, 200); });
+
+// ---------- Demo data (only used when the live forecast can't be reached) ----------
+function demoData() {
+  const time = [], d0 = todayMelb();
+  for (let i = 0; i < 15 * 24; i++) time.push(`${addDays(d0, Math.floor(i / 24))}T${String(i % 24).padStart(2, "0")}:00`);
+  const hourly = { time };
+  for (let m = 0; m < 51; m++) {
+    const sfx = m === 0 ? "" : "_member" + String(m).padStart(2, "0");
+    let seed = m * 9301 + 49297; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280 - .5;
+    const off = rnd() * 8;
+    hourly["temperature_2m" + sfx] = time.map((t, i) => 19 + 6 * Math.sin((+t.slice(11, 13) - 9) / 24 * 2 * Math.PI) + off * (1 + i / 120) * .4);
+    hourly["wind_speed_10m" + sfx] = time.map((t, i) => Math.max(1, 12 + 9 * Math.sin(i / 30) + 4 * Math.sin((+t.slice(11, 13) - 6) / 24 * 2 * Math.PI) + rnd() * 5 * (1 + i / 120)));
+    hourly["wind_direction_10m" + sfx] = time.map((t, i) => (200 + 120 * Math.sin(i / 50) + rnd() * 40 + 360) % 360);
+    hourly["wind_gusts_10m" + sfx] = hourly["wind_speed_10m" + sfx].map(w => w * 1.5);
+    hourly["precipitation" + sfx] = time.map(() => Math.max(0, rnd() * 1.2 - .45));
+  }
+  return { hourly };
+}
+
+setRange(7);
+run(false);
+</script>
+</body>
+</html>

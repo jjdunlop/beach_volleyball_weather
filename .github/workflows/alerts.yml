@@ -1,0 +1,43 @@
+name: Epic alerts
+
+on:
+  schedule:
+    # Times are UTC. 21:05 UTC = 8:05am Melbourne in summer time (7:05am in winter),
+    # 09:05 UTC = 8:05pm (7:05pm). Each run is shortly after a new ECMWF ensemble run is available.
+    - cron: "5 21 * * *"
+    - cron: "5 9 * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Send a test notification with the current outlook"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alerts
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check forecast and notify
+        run: node scripts/alert.js
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          PAGE_URL: ${{ vars.PAGE_URL }}
+          TEST_NOTIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.test && '1' || '' }}
+      - name: Save alert state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          git add alert-state.json
+          git diff --cached --quiet || (git commit -m "Update alert state" && git push)
