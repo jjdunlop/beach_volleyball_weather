@@ -20,7 +20,7 @@ Rates how worth it beach volleyball at South Melbourne Beach will be, hour by ho
 
 All in `scoring.js`.
 
-- **Wind** sets the ceiling: about 5 km/h or less (10 m model wind, adjusted for direction) is 10, 12 km/h is 7.5, 25 km/h is 2. Onshore (S–SW) counts up to 15% stronger, offshore (N–NE) up to 25% weaker.
+- **Wind** sets the ceiling: about 5 km/h or less (10 m model wind, adjusted for direction) is 10, 12 km/h is 7.5, 25 km/h is 2. The beach faces 209° (SSW; shoreline runs 299°/119°): onshore SSW counts up to 15% stronger, offshore NNE up to 25% weaker.
 - **Gustiness** (gusts above the average wind) costs extra: steady wind can be played around, sudden changes can't. Model gusts are reduced by 5 km/h first, because ECMWF over-forecasts gusts by about 1.5 m/s on average (SMHI verification).
 - **Feels-like temperature** outside 18–32°C, **rain**, and **wet sand** from rain in the previous 12 hours scale the rating down.
 - **Holding up:** an hour can't score above the average of itself and its neighbours (forecast timing is often out by an hour), and a bucket is 75% its average hour + 25% its worst hour.

@@ -4,7 +4,7 @@
 // ---------- Settings: tune these after a few weekends ----------
 const LAT = -37.8455, LON = 144.9475;          // South Melbourne Beach
 const TZ = "Australia/Melbourne";
-const BEACH_FACES = 225;                        // beach faces SW; wind FROM here is onshore
+const BEACH_FACES = 209;                        // shoreline runs 299°/119° (WNW–ESE), so the beach faces 209° (SSW); wind FROM here is onshore
 const BLOCKS = [                                // dow: 5 = Fri, 6 = Sat, 0 = Sun. Hours are local, end exclusive.
   { name: "Fri night",  dow: 5, start: 17, end: 20 },
   { name: "Sat midday", dow: 6, start: 11, end: 14 },
