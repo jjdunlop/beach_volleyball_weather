@@ -50,12 +50,13 @@ const gustExcess = h => Math.max(0, (h.gust ?? h.wind * 1.4) - h.wind);
 function hourScore(h) {
   const eff = h.wind * dirFactor(h.dir);                                // km/h, adjusted for shelter
   const windR = curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);     // glassy = 10, still rewarding calm below 12
-  // Gustiness costs a little: light wind with puffs stays Solid; strong gusts on top of real wind cost more.
-  const gustPen = curve(gustExcess(h), [[6, 0], [10, 0.5], [15, 1.5], [20, 2.5], [30, 4]]);
+  // The gust is the single strongest ~3 s puff in the hour; most of the hour sits near the average. So gustiness
+  // costs only a little unless it's extreme. Strong average wind is already handled by windR.
+  const gustPen = curve(gustExcess(h), [[8, 0], [15, 0.5], [25, 1.5], [35, 3]]);
   const feels = h.feels ?? h.temp;                                      // apparent temp: sun, wind and humidity included
   const tempM = curve(feels, [[10, 0.3], [18, 1], [32, 1], [35, 0.75], [40, 0.3]]);   // 18–32°C no penalty
-  const rainM = h.rain >= 1 ? 0.2 : h.rain >= 0.2 ? 0.5 : 1;
-  const wetM = curve(h.wetness ?? 0, [[1, 1], [4, 0.75], [10, 0.5]]);  // soggy, heavy sand after earlier rain
+  const rainM = curve(h.rain, [[0.2, 1], [0.5, 0.85], [1, 0.6], [3, 0.3]]);   // a few drops are fine; steady rain isn't
+  const wetM = curve(h.wetness ?? 0, [[2, 1], [5, 0.8], [10, 0.55]]);         // soggy, heavy sand after earlier rain
   return Math.max(0, Math.min(10, (windR - gustPen) * tempM * rainM * wetM));
 }
 
@@ -142,13 +143,14 @@ function hourFrom(get, i) {
 }
 const memberHour = (m, i) => hourFrom((v, k) => m[v]?.[k], i);
 
-// An hour counts for at most the average of itself and its neighbours. Forecast timing is often out by an hour or
-// more, and a single calm hour between windy ones is hard to plan around, so isolated lulls are discounted.
+// An hour that's better than its neighbours loses half the gap to their average. Forecast timing is often out by an
+// hour, so a lone calm hour between windy ones is discounted, without punishing a good hour next to an OK one much.
 function sustain(r) {
   return r.map((x, i) => {
     if (x == null) return null;
     const nb = [r[i - 1], x, r[i + 1]].filter(v => v != null);
-    return Math.min(x, nb.reduce((a, b) => a + b, 0) / nb.length);
+    const avg = nb.reduce((a, b) => a + b, 0) / nb.length;
+    return x - 0.5 * Math.max(0, x - avg);
   });
 }
 // A session's score is mostly its average hour, but its worst hour drags it down, so Epic needs the whole window to hold.
