@@ -67,6 +67,8 @@ const gustPenalty = excess => curve(excess, [[8, 0], [15, 0.5], [25, 1.5], [35, 
 const tempFactor = feels => curve(feels, [[10, 0.3], [18, 1], [32, 1], [35, 0.75], [40, 0.3]]);
 // Rain this hour (mm) → multiplier. A few drops are fine; steady rain isn't.
 const rainFactor = mm => curve(mm, [[0.2, 1], [0.5, 0.85], [1, 0.6], [3, 0.3]]);
+// UV index → multiplier. Minor: getting burnt makes a session less pleasant, but high UV is normal on good summer days.
+const uvFactor = uv => curve(uv, [[6, 1], [8, 0.97], [11, 0.92], [14, 0.85]]);
 // Recency-weighted rain over the previous 12 hours (mm) → multiplier, for soggy, heavy sand.
 const wetFactor = mm => curve(mm, [[2, 1], [5, 0.8], [10, 0.55]]);
 
@@ -76,7 +78,7 @@ const windOnlyRating = (speed, fromDeg) => Math.max(0, windRating(speed * dirFac
 // 0–10 "worth going" rating for one hour.
 function hourScore(h) {
   const base = windRating(h.wind * dirFactor(h.dir, h.wind)) - gustPenalty(gustExcess(h));
-  const mult = tempFactor(h.feels ?? h.temp) * rainFactor(h.rain) * wetFactor(h.wetness ?? 0);
+  const mult = tempFactor(h.feels ?? h.temp) * rainFactor(h.rain) * wetFactor(h.wetness ?? 0) * uvFactor(h.uv ?? 0);
   return Math.max(0, Math.min(10, base * mult));
 }
 
@@ -164,7 +166,7 @@ function toMembers(json) {
 // Open-Meteo wind and temperature are instantaneous at each hour mark, but gusts (maximum) and precipitation (total)
 // cover the hour ending at their timestamp. So the hour h→h+1 averages the marks at i and i+1, and takes the
 // gust and rain stamped at i+1.
-function hourFrom(get, i) {
+function hourFrom(get, i, uvAt) {
   const j = get("wind_speed_10m", i + 1) != null ? i + 1 : i;
   const avg = v => { const a = get(v, i), b = get(v, j); return a == null ? (b ?? undefined) : b == null ? a : (a + b) / 2; };
   const wind = avg("wind_speed_10m"), temp = avg("temperature_2m");
@@ -174,7 +176,7 @@ function hourFrom(get, i) {
     dir: d0 == null ? 180 : d1 == null ? d0 : circMean([d0, d1]),
     gust: g == null ? undefined : Math.max(wind, g - GUST_BIAS),
     rain: get("precipitation", j) ?? 0,
-    wetness: wetness(k => get("precipitation", k), j) };
+    wetness: wetness(k => get("precipitation", k), j), uv: uvAt?.(i) ?? undefined };
 }
 const memberHour = (m, i) => hourFrom((v, k) => m[v]?.[k], i);
 
@@ -194,12 +196,14 @@ function blockScore(rs) {
   if (!v.length) return null;
   return 0.75 * v.reduce((a, b) => a + b, 0) / v.length + 0.25 * Math.min(...v);
 }
-function ratingSeries(get, n) {
-  const hours = Array.from({ length: n }, (_, i) => hourFrom(get, i));
+function ratingSeries(get, n, uvAt) {
+  const hours = Array.from({ length: n }, (_, i) => hourFrom(get, i, uvAt));
   const raw = hours.map(h => h ? hourScore(h) : null);
   return { hours, raw, sust: sustain(raw) };
 }
-const memberSeries = data => data.series ??= data.members.map(m => ratingSeries((v, k) => m[v]?.[k], data.time.length));
+// data.uv (time → UV index) is optional and must be attached before the first call.
+const memberSeries = data => data.series ??= data.members.map(m =>
+  ratingSeries((v, k) => m[v]?.[k], data.time.length, k => data.uv?.[data.time[k]]));
 
 function weekendBuckets(data) {
   const { time, members } = data, series = memberSeries(data);
@@ -244,5 +248,5 @@ if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, exposure, dirFactor, exposureGustFactor, windOnlyRating, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
   wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
-  GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
+  GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, uvFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };
