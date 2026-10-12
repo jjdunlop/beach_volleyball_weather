@@ -239,7 +239,6 @@ function setFocus(i, scrollTo) {
     ${t ? `<span class="pill ${t.key}">${t.label} ${x.med.toFixed(1)}</span><span><span class="k">likely</span> ${x.p25.toFixed(1)}–${x.p75.toFixed(1)}</span>` : ""}
     <span><span class="k">wind</span> ${Math.round(x.wind)} km/h ${compass(x.dir)}</span>
     <span><span class="k">gusts</span> ${x.gust != null ? Math.round(x.gust) + " km/h" : "n/a"}</span>
-    <span><span class="k">gusty</span> ${Math.round(x.pGusty * 100)}%</span>
     <span><span class="k">temp</span> ${Math.round(x.temp)}°C <span class="k">feels</span> ${Math.round(x.feels)}°</span>
     <span><span class="k">rain</span> ${Math.round(x.pRain * 100)}%</span>`;
   if (scrollTo) { const box = document.getElementById("chart-scroll"); box.scrollLeft = Math.max(0, X(i) - box.clientWidth / 3); }
