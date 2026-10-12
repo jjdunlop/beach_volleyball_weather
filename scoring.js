@@ -134,6 +134,21 @@ async function fetchEnsemble() {
   if (!r.ok) throw new Error("Forecast service returned " + r.status);
   return r.json();
 }
+// UV index by local hour ("YYYY-MM-DDTHH:00" → value) from the regular forecast API. Shown, not scored.
+// Optional: on any failure it returns {} and the rest of the forecast still works.
+async function fetchUV() {
+  try {
+    const r = await fetch("https://api.open-meteo.com/v1/forecast?" + new URLSearchParams({
+      latitude: LAT, longitude: LON, hourly: "uv_index", forecast_days: 16, timezone: TZ }));
+    if (!r.ok) return {};
+    const j = await r.json(), out = {};
+    j.hourly.time.forEach((t, i) => { if (j.hourly.uv_index[i] != null) out[t] = j.hourly.uv_index[i]; });
+    return out;
+  } catch { return {}; }
+}
+// Australian UV categories (BOM / Cancer Council). Sun protection is recommended from 3.
+function uvLabel(u) { return u == null ? "" : u < 3 ? "Low" : u < 6 ? "Moderate" : u < 8 ? "High" : u < 11 ? "Very high" : "Extreme"; }
+
 // Split Open-Meteo's flat keys ("wind_speed_10m", "wind_speed_10m_member01", …) into members.
 function toMembers(json) {
   const H = json.hourly, members = {};
@@ -216,7 +231,8 @@ function weekendBuckets(data) {
       if (rainy) wet++; if (puffy) gusty++;
     }
     const lo = pctile(scores, .25), hi = pctile(scores, .75);
-    return { ...b, day, scores, med: pctile(scores, .5), lo, hi, iqr: hi - lo, i0: idx[0],
+    const uvs = idx.map(i => data.uv?.[time[i]]).filter(u => u != null);
+    return { ...b, day, scores, med: pctile(scores, .5), lo, hi, iqr: hi - lo, i0: idx[0], uv: uvs.length ? Math.max(...uvs) : null,
       playStart, playEnd, clipped: playStart > b.start || playEnd < b.end, sunset, feels: pctile(feels, .5),
       pRain: wet / members.length, pGusty: gusty / members.length, wind: pctile(winds, .5), gust: gusts.length ? pctile(gusts, .5) : null,
       dir: circMean(dirs), temp: pctile(temps, .5),
@@ -227,6 +243,6 @@ function weekendBuckets(data) {
 if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, exposure, dirFactor, exposureGustFactor, windOnlyRating, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
-  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, toMembers, memberHour, weekendBuckets,
+  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
   GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };

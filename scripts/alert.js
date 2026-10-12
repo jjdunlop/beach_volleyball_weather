@@ -25,7 +25,7 @@ function describe(b) {
   const t = S.tierOf(b.med);
   return `${t.label} ${b.med.toFixed(1)}/10 (likely ${b.lo.toFixed(1)}–${b.hi.toFixed(1)}) · ` +
     `${Math.round(b.wind)} km/h ${S.compass(b.dir)}, gusts ${b.gust != null ? Math.round(b.gust) : "?"} · ` +
-    `${Math.round(b.temp)}°C (feels ${Math.round(b.feels)}) · rain ${Math.round(b.pRain * 100)}% · gusty ${Math.round(b.pGusty * 100)}%`;
+    `${Math.round(b.temp)}°C (feels ${Math.round(b.feels)}) · rain ${Math.round(b.pRain * 100)}% · gusty ${Math.round(b.pGusty * 100)}%` + (b.uv != null ? ` · UV ${Math.round(b.uv)} ${S.uvLabel(b.uv)}` : "");
 }
 
 async function notify({ title, message, priority = 3, tags = ["volleyball"] }) {
@@ -48,6 +48,7 @@ async function main() {
   const today = now.slice(0, 10), hour = +now.slice(11, 13);
   const json = process.env.FIXTURE ? JSON.parse(fs.readFileSync(process.env.FIXTURE, "utf8")) : await S.fetchEnsemble();
   const data = S.toMembers(json);
+  data.uv = process.env.FIXTURE ? {} : await S.fetchUV();
   if (!data.members.length) throw new Error("Forecast had no ensemble members");
   const weekends = S.weekendBuckets(data);
 
