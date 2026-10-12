@@ -22,10 +22,19 @@ const TIERS = [                                 // first match wins
 const tierOf = r => TIERS.find(t => r >= t.min);
 
 // ---------- Scoring ----------
-function dirFactor(fromDeg) {
-  // 1.15 dead onshore (SW), 0.75 dead offshore (NE); N ≈ 0.81, S ≈ 1.09
-  return 0.95 + 0.2 * Math.cos(((fromDeg - BEACH_FACES) * Math.PI) / 180);
+// How much the wind comes off the bay (onshore, 1 = dead on) or off the land/city (offshore, 1 = dead off).
+function exposure(fromDeg) {
+  const c = Math.cos(((fromDeg - BEACH_FACES) * Math.PI) / 180);
+  return { on: Math.max(0, c), off: Math.max(0, -c) };
 }
+// Multiplier on the model wind for what reaches the sand. Onshore counts up to 15% stronger. Offshore is sheltered by
+// buildings and trees: up to 20% off the side-on 0.95 in light wind, fading to 8% by 25 km/h as the wake gets turbulent.
+function dirFactor(fromDeg, speed = 0) {
+  const { on, off } = exposure(fromDeg);
+  return 0.95 + 0.2 * on - curve(speed, [[8, 0.2], [25, 0.08]]) * off;
+}
+// Typical 3 s gust ÷ average for the exposure (WMO: onshore at a coast 1.38, offshore 1.52; ~1.6 behind a city).
+const exposureGustFactor = fromDeg => 1.38 + 0.22 * exposure(fromDeg).off;
 function curve(x, pts) {                        // linear interpolation through [x, y] points, flat beyond the ends
   if (x <= pts[0][0]) return pts[0][1];
   for (let i = 1; i < pts.length; i++) if (x <= pts[i][0]) {
@@ -45,7 +54,9 @@ function wetness(getP, i) {
 // ECMWF over-forecasts 10 m gusts by about 1.5 m/s on average (SMHI verification), so model gusts are reduced by this.
 const GUST_BIAS = 5;                            // km/h
 // Gustiness: how far gusts rise above the average wind. Players can adjust to steady wind; sudden changes they can't.
-const gustExcess = h => Math.max(0, (h.gust ?? h.wind * 1.4) - h.wind);
+// Uses the model's gust, but never less than what the exposure typically produces: the 25 km model grid can't see
+// the turbulence in the city's wake, so offshore winds get their realistic gustiness even when the model's looks tame.
+const gustExcess = h => Math.max(0, (h.gust ?? h.wind * 1.4) - h.wind, h.wind * (exposureGustFactor(h.dir ?? BEACH_FACES) - 1));
 // ---------- Rating factors (each one is plotted on the page) ----------
 // Effective wind (km/h, after direction) → base rating 0–10. Glassy = 10; still rewards calm below 12.
 const windRating = eff => curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);
@@ -59,9 +70,12 @@ const rainFactor = mm => curve(mm, [[0.2, 1], [0.5, 0.85], [1, 0.6], [3, 0.3]]);
 // Recency-weighted rain over the previous 12 hours (mm) → multiplier, for soggy, heavy sand.
 const wetFactor = mm => curve(mm, [[2, 1], [5, 0.8], [10, 0.55]]);
 
+// Rating from wind alone, for steady wind with the exposure's typical gusts (what the polar plot shows).
+const windOnlyRating = (speed, fromDeg) => Math.max(0, windRating(speed * dirFactor(fromDeg, speed)) - gustPenalty(speed * (exposureGustFactor(fromDeg) - 1)));
+
 // 0–10 "worth going" rating for one hour.
 function hourScore(h) {
-  const base = windRating(h.wind * dirFactor(h.dir)) - gustPenalty(gustExcess(h));
+  const base = windRating(h.wind * dirFactor(h.dir, h.wind)) - gustPenalty(gustExcess(h));
   const mult = tempFactor(h.feels ?? h.temp) * rainFactor(h.rain) * wetFactor(h.wetness ?? 0);
   return Math.max(0, Math.min(10, base * mult));
 }
@@ -211,7 +225,7 @@ function weekendBuckets(data) {
 }
 
 if (typeof module !== "undefined") module.exports = {
-  LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, dirFactor, curve, hourScore,
+  LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, exposure, dirFactor, exposureGustFactor, windOnlyRating, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
   wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, toMembers, memberHour, weekendBuckets,
   GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,

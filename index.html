@@ -137,14 +137,15 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
       <figure class="polar-fig">
         <canvas id="polar" width="340" height="340" role="img" aria-label="Rating by wind speed and the direction it comes from"></canvas>
         <div class="tierkey" id="tierkey"></div>
-        <figcaption><span id="polar-read">Steady wind, 24°C, dry. Hover or tap to read a point.</span></figcaption>
+        <figcaption><span id="polar-read">Wind with typical gusts for its direction, 24°C, dry. Hover or tap to read a point.</span></figcaption>
       </figure>
       <div class="minis" id="minis"></div>
     </div>
     <table class="bounds">
       <tr><th>Tiers</th><td>Epic ≥ 8.5 · Solid ≥ 7 · Decent ≥ 5 · Meh ≥ 3 · Crap &lt; 3</td></tr>
       <tr><th>Wind</th><td>≤ 5 km/h → 10 · 12 → 7.5 · 25 → 2 · ≥ 32 → 0</td></tr>
-      <tr><th>Direction</th><td>SSW (onshore) ×1.15 · S ×1.12 · W ×1.05 · N ×0.78 · NNE (offshore) ×0.75</td></tr>
+      <tr><th>Direction</th><td>Onshore SSW ×1.15 · offshore NNE ×0.75 in light wind, ×0.87 by 25 km/h</td></tr>
+      <tr><th>Exposure gusts</th><td>At least ×1.38 the average onshore, ×1.6 offshore (city wake)</td></tr>
       <tr><th>Gusts above avg</th><td>≤ 8 km/h 0 · 15 −0.5 · 25 −1.5 · 35 −3 (model gusts −5 km/h)</td></tr>
       <tr><th>Feels-like</th><td>18–32°C ×1 · 10°C ×0.3 · 35°C ×0.75 · 40°C ×0.3</td></tr>
       <tr><th>Rain</th><td>&lt; 0.2 mm ×1 · 0.5 ×0.85 · 1 ×0.6 · 3 ×0.3</td></tr>
@@ -156,7 +157,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </footer>
 </div>
 
-<script src="scoring.js?v=2026-10-12c"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
+<script src="scoring.js?v=2026-10-12d"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
 <script>
 const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
 
@@ -488,7 +489,7 @@ function drawPolar(readAt) {
     const dx = x + step / 2 - c, dy = y + step / 2 - c, r = Math.hypot(dx, dy);
     if (r > R) continue;
     const spd = r / R * MAX, dir = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
-    ctx.fillStyle = col[tierOf(windRating(spd * dirFactor(dir))).key];
+    ctx.fillStyle = col[tierOf(windOnlyRating(spd, dir)).key];
     ctx.fillRect(x, y, step, step);
   }
   // Rings, shoreline, labels
@@ -511,7 +512,7 @@ function drawPolar(readAt) {
   cv.onpointermove = cv.onpointerdown = e => {
     const b = cv.getBoundingClientRect(), x = (e.clientX - b.left) * S / b.width, y = (e.clientY - b.top) * S / b.height;
     const r = Math.hypot(x - c, y - c); if (r > R) return;
-    const spd = r / R * MAX, dir = (Math.atan2(x - c, -(y - c)) * 180 / Math.PI + 360) % 360, v = windRating(spd * dirFactor(dir));
+    const spd = r / R * MAX, dir = (Math.atan2(x - c, -(y - c)) * 180 / Math.PI + 360) % 360, v = windOnlyRating(spd, dir);
     document.getElementById("polar-read").textContent = `${Math.round(spd)} km/h from the ${compass(dir)} → ${v.toFixed(1)} ${tierOf(v).label}`;
     drawPolar({ x, y });
   };
