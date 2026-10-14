@@ -148,7 +148,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
       <tr><th>Shelter</th><td>Offshore NNE ×0.85 in light wind, ×0.95 by 25 km/h · onshore ×1</td></tr>
       <tr><th>Exposure gusts</th><td>At least ×1.38 the average onshore, ×1.6 offshore (city wake)</td></tr>
       <tr><th>Gusts above avg</th><td>≤ 8 km/h 0 · 15 −0.5 · 25 −1.5 · 35 −3 (model gusts −5 km/h)</td></tr>
-      <tr><th>Feels-like</th><td>18–32°C ×1 · 10°C ×0.3 · 35°C ×0.75 · 40°C ×0.3</td></tr>
+      <tr><th>Feels-like</th><td>16–32°C ×1 · 8°C ×0.3 · 35°C ×0.75 · 40°C ×0.3 (includes sun, wind, humidity)</td></tr>
       <tr><th>Rain</th><td>&lt; 0.2 mm ×1 · 0.5 ×0.85 · 1 ×0.6 · 3 ×0.3</td></tr>
       <tr><th>Wet sand (12 h)</th><td>&lt; 2 mm ×1 · 5 ×0.8 · 10 ×0.55</td></tr>
       <tr><th>UV</th><td>≤ 6 ×1 · 8 ×0.97 · 11 ×0.92 · 14 ×0.85 (not in past weekends)</td></tr>
@@ -159,7 +159,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </footer>
 </div>
 
-<script src="scoring.js?v=2026-10-15b"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
+<script src="scoring.js?v=2026-10-15c"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
 <script>
 const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
 
@@ -558,7 +558,7 @@ function drawMinis() {
   document.getElementById("minis").innerHTML = [
     miniChart({ title: "Gusts (points off)", x0: 0, x1: 40, xTicks: [0, 10, 20, 30, 40], xLabel: "gust above average wind (km/h)",
       y0: -4, y1: 0, yTicks: [0, -1, -2, -3, -4], fn: x => -gustPenalty(x), yFmt: v => v ? "−" + -v : "0" }),
-    miniChart({ title: "Feels-like temperature", x0: 5, x1: 42, xTicks: [10, 18, 25, 32, 40], xLabel: "°C",
+    miniChart({ title: "Feels-like temperature", x0: 5, x1: 42, xTicks: [8, 16, 24, 32, 40], xLabel: "°C",
       y0: 0, y1: 1, yTicks: [0, 0.5, 1], fn: tempFactor, yFmt: pct }),
     miniChart({ title: "Rain this hour", x0: 0, x1: 4, xTicks: [0, 1, 2, 3, 4], xLabel: "mm",
       y0: 0, y1: 1, yTicks: [0, 0.5, 1], fn: rainFactor, yFmt: pct }),

@@ -63,8 +63,8 @@ const windRating = eff => curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);
 // Gusts above the average wind (km/h) → points off. The gust is the hour's single strongest ~3 s puff and most of the
 // hour sits near the average, so gustiness costs only a little unless it's extreme.
 const gustPenalty = excess => curve(excess, [[8, 0], [15, 0.5], [25, 1.5], [35, 3]]);
-// Feels-like temperature (°C) → multiplier. Includes sun, wind and humidity. 18–32°C no penalty.
-const tempFactor = feels => curve(feels, [[10, 0.3], [18, 1], [32, 1], [35, 0.75], [40, 0.3]]);
+// Feels-like temperature (°C) → multiplier. Includes sun, wind and humidity. 16–32°C no penalty (you're moving).
+const tempFactor = feels => curve(feels, [[8, 0.3], [16, 1], [32, 1], [35, 0.75], [40, 0.3]]);
 // Rain this hour (mm) → multiplier. A few drops are fine; steady rain isn't.
 const rainFactor = mm => curve(mm, [[0.2, 1], [0.5, 0.85], [1, 0.6], [3, 0.3]]);
 // UV index → multiplier. Minor: getting burnt makes a session less pleasant, but high UV is normal on good summer days.
