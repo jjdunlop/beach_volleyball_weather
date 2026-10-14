@@ -20,7 +20,8 @@ Rates how worth it beach volleyball at South Melbourne Beach will be, hour by ho
 
 All in `scoring.js`.
 
-- **Wind** sets the ceiling: about 5 km/h or less (10 m model wind, adjusted for direction) is 10, 12 km/h is 7.5, 25 km/h is 2. The beach faces 209° (SSW; shoreline runs 299°/119°): onshore SSW counts up to 15% stronger. Offshore NNE is sheltered by up to 25% in light wind, fading to about 13% by 25 km/h as the city's wake gets turbulent, and offshore winds get at least the WMO-typical gustiness for their exposure (gust factor 1.38 onshore up to ~1.6 offshore), since the model grid can't see that turbulence.
+- **Location:** the ~25 km model grid puts the beach between a bay cell (38.0°S 145.0°E) and a land cell (37.75°S 145.0°E). Both are fetched and blended by direction: wind off the bay uses the bay cell, wind off the city the land cell, side-on a mix.
+- **Wind** sets the ceiling: about 5 km/h or less (10 m model wind, adjusted for direction) is 10, 12 km/h is 7.5, 25 km/h is 2. The beach faces 209° (SSW; shoreline runs 299°/119°). On top of the blend, offshore NNE wind gets local shelter from the buildings and trees along Beaconsfield Parade: 15% off in light wind, fading to 5% by 25 km/h, and offshore winds get at least the WMO-typical gustiness for their exposure (gust factor 1.38 onshore up to ~1.6 offshore), since the model grid can't see that turbulence.
 - **Gustiness** (gusts above the average wind) costs extra: steady wind can be played around, sudden changes can't. Model gusts are reduced by 5 km/h first, because ECMWF over-forecasts gusts by about 1.5 m/s on average (SMHI verification).
 - **Feels-like temperature** outside 18–32°C, **rain**, and **wet sand** from rain in the previous 12 hours scale the rating down.
 - **Holding up:** an hour can't score above the average of itself and its neighbours (forecast timing is often out by an hour), and a bucket is 75% its average hour + 25% its worst hour.

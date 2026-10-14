@@ -137,14 +137,15 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
       <figure class="polar-fig">
         <canvas id="polar" width="340" height="340" role="img" aria-label="Rating by wind speed and the direction it comes from"></canvas>
         <div class="tierkey" id="tierkey"></div>
-        <figcaption><span id="polar-read">Wind with typical gusts for its direction, 24°C, dry. Hover or tap to read a point.</span></figcaption>
+        <figcaption><span id="polar-read">Forecast wind at the beach, with typical gusts for its direction, 24°C, dry. Hover or tap to read a point.</span></figcaption>
       </figure>
       <div class="minis" id="minis"></div>
     </div>
     <table class="bounds">
       <tr><th>Tiers</th><td>Epic ≥ 8.5 · Solid ≥ 7 · Decent ≥ 5 · Meh ≥ 3 · Crap &lt; 3</td></tr>
       <tr><th>Wind</th><td>≤ 5 km/h → 10 · 12 → 7.5 · 25 → 2 · ≥ 32 → 0</td></tr>
-      <tr><th>Direction</th><td>Onshore SSW ×1.15 · offshore NNE ×0.75 in light wind, ×0.87 by 25 km/h</td></tr>
+      <tr><th>Location</th><td>Bay and land model cells blended by direction: off the bay = bay cell, off the city = land cell</td></tr>
+      <tr><th>Shelter</th><td>Offshore NNE ×0.85 in light wind, ×0.95 by 25 km/h · onshore ×1</td></tr>
       <tr><th>Exposure gusts</th><td>At least ×1.38 the average onshore, ×1.6 offshore (city wake)</td></tr>
       <tr><th>Gusts above avg</th><td>≤ 8 km/h 0 · 15 −0.5 · 25 −1.5 · 35 −3 (model gusts −5 km/h)</td></tr>
       <tr><th>Feels-like</th><td>18–32°C ×1 · 10°C ×0.3 · 35°C ×0.75 · 40°C ×0.3</td></tr>
@@ -158,7 +159,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </footer>
 </div>
 
-<script src="scoring.js?v=2026-10-12f"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
+<script src="scoring.js?v=2026-10-14a"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
 <script>
 const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
 
@@ -371,15 +372,12 @@ function lastFinishedFriday() {
 }
 let btFriday = null;
 
-async function fetchPast(fri) {
+function fetchPast(fri) {
   const hourly = VARS.flatMap(v => LEADS.map(n => `${v}_previous_day${n}`));
-  const url = "https://previous-runs-api.open-meteo.com/v1/forecast?" + new URLSearchParams({
+  return fetchBlended("https://previous-runs-api.open-meteo.com/v1/forecast", {
     latitude: LAT, longitude: LON, hourly: hourly.join(","), models: "ecmwf_ifs025",
     start_date: fri, end_date: addDays(fri, 2), timezone: TZ, wind_speed_unit: "kmh",
   });
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("Archive service returned " + r.status);
-  return r.json();
 }
 
 function analysePast(json, fri) {

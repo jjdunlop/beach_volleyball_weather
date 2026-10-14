@@ -27,11 +27,11 @@ function exposure(fromDeg) {
   const c = Math.cos(((fromDeg - BEACH_FACES) * Math.PI) / 180);
   return { on: Math.max(0, c), off: Math.max(0, -c) };
 }
-// Multiplier on the model wind for what reaches the sand. Onshore counts up to 15% stronger. Offshore is sheltered by
-// buildings and trees: up to 20% off the side-on 0.95 in light wind, fading to 8% by 25 km/h as the wake gets turbulent.
+// Local shelter at the courts, on top of the bay/land blend (which already makes bay winds stronger than city winds).
+// Offshore wind is in the lee of the buildings and trees along Beaconsfield Parade: 15% off in light wind, fading to
+// 5% by 25 km/h as the wake gets turbulent. Onshore wind arrives straight off the water: no change.
 function dirFactor(fromDeg, speed = 0) {
-  const { on, off } = exposure(fromDeg);
-  return 0.95 + 0.2 * on - curve(speed, [[8, 0.2], [25, 0.08]]) * off;
+  return 1 - curve(speed, [[8, 0.15], [25, 0.05]]) * exposure(fromDeg).off;
 }
 // Typical 3 s gust ÷ average for the exposure (WMO: onshore at a coast 1.38, offshore 1.52; ~1.6 behind a city).
 const exposureGustFactor = fromDeg => 1.38 + 0.22 * exposure(fromDeg).off;
@@ -127,14 +127,42 @@ function playable(day, h) { const [rise, set] = sunTimes(day); return h + 0.5 >=
 // ---------- Data ----------
 const VARS = ["temperature_2m", "apparent_temperature", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "precipitation"];
 
-async function fetchEnsemble() {
-  const url = "https://ensemble-api.open-meteo.com/v1/ensemble?" + new URLSearchParams({
+// The model grid is ~25 km, and the beach sits between two grid cells: one over the bay (38.0°S 145.0°E) and one
+// over the inner suburbs (37.75°S 145.0°E). Bay winds are often 2–3× stronger than land winds. So both cells are
+// fetched and blended by wind direction: wind off the bay takes the bay cell, wind off the city takes the land cell,
+// side-on takes a mix. (Open-Meteo's default picks the land cell, which badly understated sea breezes.)
+async function fetchCell(base, params, cell) {
+  const r = await fetch(base + "?" + new URLSearchParams({ ...params, cell_selection: cell }));
+  if (!r.ok) throw new Error("Forecast service returned " + r.status);
+  return r.json();
+}
+async function fetchBlended(base, params) {
+  const [sea, land] = await Promise.all([fetchCell(base, params, "sea"), fetchCell(base, params, "land")]);
+  return blendCells(sea, land);
+}
+// Weight of the bay cell for a wind direction: 1 straight off the bay, 0 straight off the city, 0.5 side-on.
+const seaWeight = dir => 0.5 + 0.5 * Math.cos(((dir - BEACH_FACES) * Math.PI) / 180);
+function blendCells(sea, land) {
+  const S = sea.hourly, L = land.hourly, out = { time: S.time };
+  for (const key of Object.keys(S)) {
+    if (key === "time") continue;
+    const v = VARS.find(v => key === v || key.startsWith(v + "_"));
+    const dirKey = v ? "wind_direction_10m" + key.slice(v.length) : null;
+    if (!v || v === "wind_direction_10m" || !L[key] || !S[dirKey]) { out[key] = S[key]; continue; }
+    out[key] = S[key].map((x, i) => {
+      const y = L[key][i], d = S[dirKey][i];
+      if (x == null || y == null || d == null) return x ?? y ?? null;
+      const w = seaWeight(d);
+      return w * x + (1 - w) * y;
+    });
+  }
+  return { ...sea, hourly: out, blended: true };
+}
+function fetchEnsemble() {
+  return fetchBlended("https://ensemble-api.open-meteo.com/v1/ensemble", {
     latitude: LAT, longitude: LON, hourly: VARS.join(","), models: "ecmwf_ifs025",
     forecast_days: 15, timezone: TZ, wind_speed_unit: "kmh",
   });
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("Forecast service returned " + r.status);
-  return r.json();
 }
 // UV index by local hour ("YYYY-MM-DDTHH:00" → value) from the regular forecast API. Shown, not scored.
 // Optional: on any failure it returns {} and the rest of the forecast still works.
@@ -247,6 +275,6 @@ function weekendBuckets(data) {
 if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, exposure, dirFactor, exposureGustFactor, windOnlyRating, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
-  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
+  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
   GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, uvFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };
