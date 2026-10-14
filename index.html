@@ -455,7 +455,20 @@ document.getElementById("r7").onclick = () => setRange(7);
 document.getElementById("r15").onclick = () => setRange(15);
 document.getElementById("bt-prev").onclick = () => { btFriday = addDays(btFriday, -7); runPast(); };
 document.getElementById("bt-next").onclick = () => { btFriday = addDays(btFriday, 7); runPast(); };
-let rsz; window.addEventListener("resize", () => { clearTimeout(rsz); rsz = setTimeout(() => { if (forecast && !document.getElementById("range-nav").hidden) renderForecast(); }, 200); });
+// Phones fire "resize" whenever the address bar shows or hides while scrolling. Only react to real width changes,
+// and redraw just the chart in place: rebuilding the page empties it for a moment and the browser jumps to the top.
+let rsz, lastW = window.innerWidth;
+window.addEventListener("resize", () => {
+  if (window.innerWidth === lastW) return;
+  lastW = window.innerWidth;
+  clearTimeout(rsz);
+  rsz = setTimeout(() => {
+    if (forecast && !document.getElementById("range-nav").hidden && document.getElementById("chart-scroll")) {
+      drawChart(forecast.hours, forecast.buckets, rangeDays, forecast.now);
+    }
+    drawHowto();
+  }, 200);
+});
 
 // ---------- Demo data (only used when the live forecast can't be reached) ----------
 function demoUV() {
@@ -565,7 +578,6 @@ const drawHowto = () => {
   catch (e) { document.getElementById("polar-read").textContent = "Couldn't draw the charts. Reload the page to get the latest version."; console.error(e); }
 };
 howto.addEventListener("toggle", drawHowto);
-window.addEventListener("resize", () => { clearTimeout(drawHowto.t); drawHowto.t = setTimeout(drawHowto, 200); });
 try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawHowto); } catch {}
 
 setRange(7);
