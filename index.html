@@ -144,7 +144,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
     <table class="bounds">
       <tr><th>Tiers</th><td>Epic ≥ 8.5 · Solid ≥ 7 · Decent ≥ 5 · Meh ≥ 3 · Crap &lt; 3</td></tr>
       <tr><th>Wind</th><td>≤ 5 km/h → 10 · 12 → 7.5 · 25 → 2 · ≥ 32 → 0</td></tr>
-      <tr><th>Location</th><td>Bay and land model cells blended by direction: off the bay = bay cell, off the city = land cell</td></tr>
+      <tr><th>Location</th><td>Bay and land model cells blended by direction: off the bay = bay cell, off the city = land cell. Temperatures take at most half from the bay cell.</td></tr>
       <tr><th>Shelter</th><td>Offshore NNE ×0.85 in light wind, ×0.95 by 25 km/h · onshore ×1</td></tr>
       <tr><th>Exposure gusts</th><td>At least ×1.38 the average onshore, ×1.6 offshore (city wake)</td></tr>
       <tr><th>Gusts above avg</th><td>≤ 8 km/h 0 · 15 −0.5 · 25 −1.5 · 35 −3 (model gusts −5 km/h)</td></tr>
@@ -159,7 +159,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
   </footer>
 </div>
 
-<script src="scoring.js?v=2026-10-14a"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
+<script src="scoring.js?v=2026-10-15a"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
 <script>
 const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
 

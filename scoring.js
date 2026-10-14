@@ -142,6 +142,10 @@ async function fetchBlended(base, params) {
 }
 // Weight of the bay cell for a wind direction: 1 straight off the bay, 0 straight off the city, 0.5 side-on.
 const seaWeight = dir => 0.5 + 0.5 * Math.cos(((dir - BEACH_FACES) * Math.PI) / 180);
+// Temperature needs a lighter touch. The bay cell's air sits over ~15°C water mid-bay (spring afternoons often read
+// 5°C+ cooler than land), while air reaching the beach on a sea breeze has warmed over the shallows and the sand sits in
+// full sun. So for temperatures the bay cell counts at most half, even with the wind dead onshore.
+const SEA_WEIGHT_CAP = { temperature_2m: 0.5, apparent_temperature: 0.5 };
 function blendCells(sea, land) {
   const S = sea.hourly, L = land.hourly, out = { time: S.time };
   for (const key of Object.keys(S)) {
@@ -152,7 +156,7 @@ function blendCells(sea, land) {
     out[key] = S[key].map((x, i) => {
       const y = L[key][i], d = S[dirKey][i];
       if (x == null || y == null || d == null) return x ?? y ?? null;
-      const w = seaWeight(d);
+      const w = Math.min(seaWeight(d), SEA_WEIGHT_CAP[v] ?? 1);
       return w * x + (1 - w) * y;
     });
   }
