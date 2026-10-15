@@ -2,7 +2,7 @@
 
 Rates how worth it beach volleyball at South Melbourne Beach will be, hour by hour, 0–10, from the ECMWF 51-member ensemble (via [Open-Meteo](https://open-meteo.com), free for non-commercial use). Sends a push notification when a weekend session is forecast to be Epic.
 
-- `index.html`: the forecast page (timeline, best windows, weekend buckets, past weekends).
+- `index.html`: the forecast page (timeline, best windows, weekend buckets, past weekends). It saves the last forecast in the browser. A return visit shows that copy straight away while a fresh one loads, and the saved copy stays up if Open-Meteo can't be reached.
 - `scoring.js`: settings and scoring shared by the page and the alerts. Tune thresholds here, then bump the `?v=` on its `<script>` tag in `index.html` so browsers don't keep a stale cached copy.
 - `scripts/alert.js`: checks the weekend buckets and sends notifications through [ntfy](https://ntfy.sh).
 - `.github/workflows/alerts.yml`: runs the alert check twice a day (about 8am and 8pm Melbourne time).

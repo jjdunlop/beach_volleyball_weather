@@ -267,6 +267,7 @@ function drawChart(hours, buckets, days, now, focusIdx) {
 
 function setFocus(i, scrollTo) {
   const { hs, X, Y } = chartState; if (!hs[i]) return;
+  chartState.focus = i;
   const x = hs[i], svg = document.querySelector("#chart-scroll svg");
   const cur = svg.getElementById ? svg.getElementById("cur") : svg.querySelector("#cur"), dot = svg.querySelector("#curdot");
   cur.setAttribute("x1", X(i)); cur.setAttribute("x2", X(i)); cur.setAttribute("visibility", "visible");
@@ -286,7 +287,7 @@ function setFocus(i, scrollTo) {
 // ---------- Render: forecast ----------
 let forecast = null, rangeDays = 7;
 
-function renderForecast() {
+function renderForecast(focusT) {        // focusT: hour to keep selected on the chart ("YYYY-MM-DDTHH:00")
   const { hours, buckets, now } = forecast;
   const out = document.getElementById("out");
   out.innerHTML = `
@@ -298,7 +299,7 @@ function renderForecast() {
         <span><i style="background:var(--night)"></i>night</span>      </div>
     </section>
     <section><h2>Best windows</h2><div class="windows" id="windows"></div></section>`;
-  drawChart(hours, buckets, rangeDays, now);
+  drawChart(hours, buckets, rangeDays, now, hours.findIndex(x => x.t === focusT));
 
   const wins = bestWindows(hours, now, 7), wEl = document.getElementById("windows");
   if (!wins.length) wEl.innerHTML = `<p class="empty">No stretch of ${BEST_MIN_HOURS}+ daylight hours rated ${BEST_MIN_RATING}+ this week.</p>`;
@@ -345,20 +346,76 @@ function renderForecast() {
   });
 }
 
-async function run(useDemo) {
+// ---------- Saved forecast (this browser only) ----------
+// The last good forecast is kept in localStorage. The next visit shows it straight away while a fresh copy loads in
+// the background, and it stays on screen if Open-Meteo or the connection fails. Storage can be blocked or full
+// (private browsing), so every read and write is optional. The key is prefixed because every page on
+// jjdunlop.github.io shares one storage area.
+const SAVE_KEY = "beach-volleyball-weather:forecast";
+const SHOW_WHILE_LOADING = 24 * 3600e3;    // a saved copy older than this isn't shown while loading...
+const SHOW_IF_OFFLINE = 3 * 24 * 3600e3;   // ...but is shown, with a warning, if the fetch fails and it's under this
+let shown = null, shownSig = "", loading = false;   // shown: { t: fetched at (ms), hourly, uv } on screen now
+
+function loadSaved() {
+  try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); return s?.t && s.hourly?.time ? s : null; } catch { return null; }
+}
+// Saved exactly as fetched (under 1 MB). Rounding would shrink it, but nudges values sitting on a threshold
+// (rain ≥ 0.2 mm, gusty) and changes a few displayed numbers.
+function save(s) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch {} }
+const sigOf = s => JSON.stringify([s.hourly, s.uv]);
+const clock = t => new Date(t).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
+const fetchedAt = t => new Date(t).toDateString() === new Date().toDateString() ? clock(t)
+  : new Date(t).toLocaleDateString("en-AU", { weekday: "short" }) + " " + clock(t);
+
+// The status line is shared with "Past weekends", so forecast messages are remembered and repainted on switching back.
+let fcStatus = ["Loading forecast…", false];
+function setStatus(html, err = false) { fcStatus = [html, err]; paintStatus(); }
+function paintStatus() {
+  if (document.getElementById("range-nav").hidden) return;
   const st = document.getElementById("status");
-  st.className = "status"; st.textContent = "Loading forecast…";
+  st.className = fcStatus[1] ? "status err" : "status"; st.innerHTML = fcStatus[0];
+  document.getElementById("retry")?.addEventListener("click", () => run(false));
+  document.getElementById("demo")?.addEventListener("click", () => run(true));
+}
+
+// keepView: redraw in place without moving the page scroll, the chart scroll or the selected hour.
+function show(s, keepView) {
+  const data = toMembers(s); data.uv = s.uv;
+  forecast = { hours: hourlyStats(data), buckets: weekendBuckets(data), now: nowMelb() };
+  shown = s; shownSig = sigOf(s);
+  if (document.getElementById("range-nav").hidden) return;   // "Past weekends" is open; switching back redraws
+  if (!keepView) return renderForecast();
+  const y = window.scrollY, sl = document.getElementById("chart-scroll")?.scrollLeft, ft = chartState?.hs[chartState.focus]?.t;
+  renderForecast(ft);
+  const box = document.getElementById("chart-scroll"); if (box && sl != null) box.scrollLeft = sl;
+  window.scrollTo(0, y);
+}
+
+async function run(useDemo) {
+  if (useDemo) {
+    show({ hourly: demoData().hourly, uv: demoUV() }); shown = null;
+    return setStatus("Showing made-up demo data, not a forecast.");
+  }
+  if (loading) return;
+  loading = true;
+  const saved = loadSaved(), age = saved ? Date.now() - saved.t : Infinity;
+  if (!shown && age < SHOW_WHILE_LOADING) show(saved);
+  setStatus(shown ? `Forecast from ${fetchedAt(shown.t)} · updating…` : "Loading forecast…");
   try {
-    const [json, uv] = useDemo ? [demoData(), demoUV()] : await Promise.all([fetchEnsemble(), fetchUV()]);
-    const data = toMembers(json); data.uv = uv;
-    forecast = { hours: hourlyStats(data), buckets: weekendBuckets(data), now: nowMelb() };
-    renderForecast();
-    st.textContent = useDemo ? "Showing made-up demo data, not a forecast." :
-      `Updated ${new Date().toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
+    const [json, uv] = await Promise.all([fetchEnsemble(), fetchUV()]);
+    // fetchUV returns {} on failure; keep the last UV values rather than dropping them.
+    const fresh = { t: Date.now(), hourly: json.hourly, uv: Object.keys(uv).length ? uv : shown?.uv ?? saved?.uv ?? {} };
+    if (!shown || sigOf(fresh) !== shownSig) show(fresh, !!shown);   // only redraw when the forecast changed
+    else shown = fresh;
+    save(fresh);
+    setStatus(`Updated ${clock(fresh.t)}`);
   } catch (e) {
-    st.className = "status err";
-    st.innerHTML = `Couldn't load the forecast (${e.message}). Check your connection and reload. <button id="demo" class="ghost">Show demo data</button>`;
-    document.getElementById("demo").onclick = () => run(true);
+    if (!shown && age < SHOW_IF_OFFLINE) show(saved);
+    if (shown) setStatus(`Couldn't refresh (${e.message}). Showing the forecast from ${fetchedAt(shown.t)}` +
+      `${Date.now() - shown.t > SHOW_WHILE_LOADING ? ", which may be out of date" : ""}. <button id="retry" class="ghost">Try again</button>`, true);
+    else setStatus(`Couldn't load the forecast (${e.message}). Check your connection and reload. <button id="demo" class="ghost">Show demo data</button>`, true);
+  } finally {
+    loading = false;
   }
 }
 
@@ -439,7 +496,7 @@ function setMode(past) {
   document.getElementById("bt-nav").hidden = !past;
   document.getElementById("range-nav").hidden = past;
   if (past) { btFriday ??= lastFinishedFriday(); runPast(); }
-  else if (forecast) renderForecast(); else run(false);
+  else { paintStatus(); if (forecast) renderForecast(); else run(false); }
 }
 function setRange(d) {
   rangeDays = d;
