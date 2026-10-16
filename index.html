@@ -109,6 +109,11 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
 .tierkey { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center; font-size: .78rem }
 .tierkey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px }
 .polar-fig figcaption { font-size: .82rem; text-align: center; min-height: 2.6em; font-variant-numeric: tabular-nums }
+.cells-fig { margin: 12px 0 0; display: grid; gap: 6px }
+#cellmap { height: 320px; border: 1px solid var(--line); border-radius: 8px; background: var(--card) }
+.cells-fig figcaption { font-size: .82rem; max-width: 70ch }
+.cell-label { background: var(--card) !important; color: var(--ink) !important; border: 1px solid var(--line) !important; font: 600 12px var(--body) !important; box-shadow: none !important }
+.cell-label::before { display: none }
 .minis { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 10px }
 .minis svg { width: 100%; height: auto; display: block; background: var(--card); border: 1px solid var(--line); border-radius: 8px }
 .minis text { font: 11px var(--body); fill: var(--muted) }
@@ -154,12 +159,16 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
       <tr><th>UV</th><td>≤ 6 ×1 · 8 ×0.97 · 11 ×0.92 · 14 ×0.85 (not in past weekends)</td></tr>
       <tr><th>Sessions</th><td>Daylight only · 75% average hour + 25% worst</td></tr>
     </table>
+    <figure class="cells-fig">
+      <div id="cellmap" role="img" aria-label="Map of the bay and land model grid cells around South Melbourne Beach"></div>
+      <figcaption>The forecast model's 25 km grid. The same 51 runs are read at the centre of each square. Wind off the bay uses the bay square, wind off the city the land square, along the shore a mix. Temperature uses the land square.</figcaption>
+    </figure>
     </details>
     <p>ECMWF 51-member ensemble via Open-Meteo. Line = median, band = likely range.</p>
   </footer>
 </div>
 
-<script src="scoring.js?v=2026-10-16a"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
+<script src="scoring.js?v=2026-10-16b"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
 <script>
 const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
 
@@ -626,10 +635,45 @@ function drawMinis() {
   ].join("");
 }
 
+// ---------- Map of the two model grid cells (Leaflet + OpenStreetMap, loaded the first time it's opened) ----------
+let cellMap = null, leafletLoading = null;
+function loadLeaflet() {
+  return leafletLoading ??= new Promise((ok, fail) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.append(css);
+    const js = document.createElement("script");
+    js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; js.onload = ok; js.onerror = fail;
+    document.head.append(js);
+  });
+}
+async function drawCellMap() {
+  if (cellMap) { cellMap.invalidateSize(); return; }
+  const el = document.getElementById("cellmap");
+  try { await loadLeaflet(); } catch { el.textContent = "Couldn't load the map."; return; }
+  const h = CELLS.size / 2, sq = ([la, lo]) => [[la - h, lo - h], [la + h, lo + h]];
+  cellMap = L.map(el, { scrollWheelZoom: false, attributionControl: true });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 15, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(cellMap);
+  const cells = [["sea", "Bay cell", cssVar("--bay")], ["land", "Land cell", cssVar("--maybe")]];
+  for (const [k, name, color] of cells) {
+    L.rectangle(sq(CELLS[k]), { color, weight: 2, fillOpacity: 0.12 }).addTo(cellMap);
+    L.circleMarker(CELLS[k], { radius: 5, color, weight: 2, fillColor: color, fillOpacity: 1 }).addTo(cellMap)
+      .bindTooltip(`${name} · ${Math.abs(CELLS[k][0])}°S ${CELLS[k][1]}°E`, { permanent: true, direction: "right", className: "cell-label" });
+  }
+  // Courts, with an arrow out to sea along the direction the beach faces.
+  const ink = cssVar("--ink"), km = 0.009 /* ° latitude per km */, a = BEACH_FACES * Math.PI / 180;
+  const tip = [LAT + Math.cos(a) * 8 * km, LON + Math.sin(a) * 8 * km / Math.cos(LAT * Math.PI / 180)];   // 8 km out
+  L.polyline([[LAT, LON], tip], { color: ink, weight: 2, dashArray: "4 4" }).addTo(cellMap);
+  L.circleMarker([LAT, LON], { radius: 6, color: ink, weight: 2, fillColor: cssVar("--card"), fillOpacity: 1 }).addTo(cellMap)
+    .bindTooltip("Courts · beach faces SSW", { permanent: true, direction: "left", className: "cell-label" });
+  cellMap.fitBounds([sq(CELLS.sea)[0], sq(CELLS.land)[1]], { padding: [10, 10] });
+}
+
 const howto = document.getElementById("howto");
 const drawHowto = () => {
   if (!howto.open) return;
-  try { drawPolar(); drawMinis(); drawKey(); }
+  try { drawPolar(); drawMinis(); drawKey(); drawCellMap(); }
   catch (e) { document.getElementById("polar-read").textContent = "Couldn't draw the charts. Reload the page to get the latest version."; console.error(e); }
 };
 howto.addEventListener("toggle", drawHowto);

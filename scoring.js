@@ -140,6 +140,8 @@ async function fetchBlended(base, params) {
   const [sea, land] = await Promise.all([fetchCell(base, params, "sea"), fetchCell(base, params, "land")]);
   return blendCells(sea, land);
 }
+// The two 0.25° model grid cells Open-Meteo returns for the beach (cell centres; shown on the page's map).
+const CELLS = { sea: [-38.0, 145.0], land: [-37.75, 145.0], size: 0.25 };
 // Weight of the bay cell for a wind direction: 1 straight off the bay, 0 straight off the city, 0.5 side-on.
 const seaWeight = dir => 0.5 + 0.5 * Math.cos(((dir - BEACH_FACES) * Math.PI) / 180);
 // Temperature needs a lighter touch. The bay cell's air sits over ~15°C water mid-bay (spring afternoons often read
@@ -279,6 +281,6 @@ function weekendBuckets(data) {
 if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, exposure, dirFactor, exposureGustFactor, windOnlyRating, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
-  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
+  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, CELLS, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
   GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, uvFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };
