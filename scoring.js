@@ -170,6 +170,56 @@ function fetchEnsemble() {
     forecast_days: 15, timezone: TZ, wind_speed_unit: "kmh",
   });
 }
+// ---------- Sharpening with the 9 km model ----------
+// ECMWF's single 9 km run (IFS HRES) resolves the bay's shoreline and sea-breeze timing better than the 25 km ensemble,
+// but it's one forecast with no spread. "Re-centring" keeps the ensemble's spread and moves its middle towards the 9 km
+// run: each hour, every member is shifted by (9 km value − ensemble median) × weight. The weight fades with lead time,
+// since the 9 km run has no extra skill a few days out. Only wind and gusts are shifted.
+// Wind and gusts only: the 9 km land point is right on the coast near Port Melbourne and reads 2–4°C cooler than inland,
+// and temperatures deliberately follow the inland 25 km cell (closer to the Bureau's forecast for the beach).
+const RECENTRE_VARS = ["wind_speed_10m", "wind_gusts_10m"];
+const hresWeight = leadHours => curve(leadHours, [[48, 0.8], [120, 0]]);   // 0.8 for 2 days, gone by day 5
+
+// Optional: on failure returns null and the ensemble is used as is.
+async function fetchHres() {
+  try {
+    const j = await fetchBlended("https://api.open-meteo.com/v1/forecast", {
+      latitude: LAT, longitude: LON, hourly: VARS.join(","), models: "ecmwf_ifs",
+      forecast_days: 5, timezone: TZ, wind_speed_unit: "kmh",
+    });
+    return j.hourly?.time?.length ? j.hourly : null;
+  } catch { return null; }
+}
+// "YYYY-MM-DDTHH" in Melbourne time for a timestamp (ms).
+function melbHour(ms) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ms)).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}`;
+}
+// Returns a copy of the ensemble's hourly data with members shifted towards the 9 km run. fetchedAt (ms) sets lead time.
+function recentre(ens, hres, fetchedAt) {
+  if (!hres?.time) return ens;
+  const out = { ...ens }, at = Object.fromEntries(hres.time.map((t, i) => [t, i]));
+  const i0 = ens.time.findIndex(t => t.slice(0, 13) >= melbHour(fetchedAt));
+  if (i0 < 0) return ens;
+  for (const v of RECENTRE_VARS) {
+    if (!hres[v] || !ens[v]) continue;
+    const keys = Object.keys(ens).filter(k => k === v || k.startsWith(v + "_member"));
+    for (const k of keys) out[k] = ens[k].slice();
+    ens.time.forEach((t, i) => {
+      const j = at[t], h = j == null ? null : hres[v][j], w = hresWeight(i - i0);
+      if (h == null || w <= 0) return;
+      const vals = keys.map(k => ens[k][i]).filter(x => x != null);
+      if (!vals.length) return;
+      const shift = w * (h - pctile(vals, 0.5));
+      for (const k of keys) if (ens[k][i] != null) {
+        const x = ens[k][i] + shift;
+        out[k][i] = Math.round((v.startsWith("wind") ? Math.max(0, x) : x) * 100) / 100;
+      }
+    });
+  }
+  return out;
+}
+
 // UV index by local hour ("YYYY-MM-DDTHH:00" → value) from the regular forecast API. Shown, not scored.
 // Optional: on any failure it returns {} and the rest of the forecast still works.
 async function fetchUV() {
@@ -281,6 +331,6 @@ function weekendBuckets(data) {
 if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, exposure, dirFactor, exposureGustFactor, windOnlyRating, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
-  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, CELLS, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
+  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, CELLS, fetchHres, recentre, hresWeight, melbHour, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
   GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, uvFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };

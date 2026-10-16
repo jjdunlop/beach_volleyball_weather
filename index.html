@@ -164,11 +164,11 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
       <figcaption>The forecast model's 25 km grid. The same 51 runs are read at the centre of each square. Wind off the bay uses the bay square, wind off the city the land square, along the shore a mix. Temperature uses the land square.</figcaption>
     </figure>
     </details>
-    <p>ECMWF 51-member ensemble via Open-Meteo. Line = median, band = likely range.</p>
+    <p>ECMWF 51-member ensemble via Open-Meteo, sharpened for the first few days with ECMWF's 9 km model. Line = median, band = likely range.</p>
   </footer>
 </div>
 
-<script src="scoring.js?v=2026-10-16b"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
+<script src="scoring.js?v=2026-10-16d"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
 <script>
 const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
 
@@ -214,6 +214,7 @@ function drawChart(hours, buckets, days, now, focusIdx) {
   const box = document.getElementById("chart-scroll");
   const start = hours.findIndex(x => x.day === now.slice(0, 10));
   const hs = hours.slice(Math.max(0, start), Math.max(0, start) + days * 24);
+  const cmp = forecast?.compare?.slice(Math.max(0, start), Math.max(0, start) + days * 24);
   const avail = box.clientWidth || 340;
   const pxH = Math.max(avail / hs.length, window.innerWidth < 640 ? 5 : 2.6);     // phones scroll; desktop fits
   const W = Math.round(pxH * hs.length), top = 30, ph = 200, bot = 26, H = top + ph + bot;
@@ -255,6 +256,10 @@ function drawChart(hours, buckets, days, now, focusIdx) {
   for (const seg of segs) {
     s += `<path d="${area(seg, "p10", "p90")}" style="fill:var(--ink);opacity:.06"/>`;
     s += `<path d="${area(seg, "p25", "p75")}" style="fill:var(--ink);opacity:.12"/>`;
+    if (cmp) {   // ensemble on its own, only where the 9 km run moved it noticeably
+      const moved = seg.filter(i => cmp[i] && Math.abs(cmp[i].med - hs[i].med) >= 0.1);
+      if (moved.length) s += `<path d="M${seg.map(i => `${X(i)},${Y(cmp[i]?.med ?? hs[i].med)}`).join("L")}" fill="none" style="stroke:var(--ink);opacity:.45" stroke-width="1.5" stroke-dasharray="4 3" stroke-linejoin="round"/>`;
+    }
     s += `<path d="M${seg.map(i => `${X(i)},${Y(hs[i].med)}`).join("L")}" fill="none" stroke="url(#tierg)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
   }
   // Now marker
@@ -282,9 +287,12 @@ function setFocus(i, scrollTo) {
   cur.setAttribute("x1", X(i)); cur.setAttribute("x2", X(i)); cur.setAttribute("visibility", "visible");
   if (!isNaN(x.med)) { dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(x.med)); dot.setAttribute("visibility", "visible"); } else dot.setAttribute("visibility", "hidden");
   const t = isNaN(x.med) ? null : tierOf(x.med);
+  const c = forecast?.compare?.find(y => y.t === x.t), cmpTxt = c && !isNaN(c.med) && Math.abs(c.med - x.med) >= 0.1
+    ? `<span><span class="k">without 9 km</span> ${c.med.toFixed(1)}</span>` : "";
   document.getElementById("readout").innerHTML = `
     <span class="t">${fmtDay(x.day)} · ${hr(x.h)}${x.daylight ? "" : " (dark)"}</span>
     ${t ? `<span class="pill ${t.key}">${t.label} ${x.med.toFixed(1)}</span><span><span class="k">likely</span> ${x.p25.toFixed(1)}–${x.p75.toFixed(1)}</span>` : ""}
+    ${cmpTxt}
     <span><span class="k">wind</span> ${Math.round(x.wind)} km/h ${compass(x.dir)}</span>
     <span><span class="k">gusts</span> ${x.gust != null ? Math.round(x.gust) + " km/h" : "n/a"}</span>
     <span><span class="k">temp</span> ${Math.round(x.temp)}°C <span class="k">feels</span> ${Math.round(x.feels)}°</span>
@@ -305,7 +313,9 @@ function renderForecast(focusT) {        // focusT: hour to keep selected on the
       <div class="chart-box"><div class="chart-scroll" id="chart-scroll"></div><div class="readout" id="readout"></div></div>
       <div class="chart-legend">
         <span><i style="background:var(--ink);opacity:.25"></i>likely range</span>
-        <span><i style="background:var(--night)"></i>night</span>      </div>
+        <span><i style="background:var(--night)"></i>night</span>
+        ${forecast.compare ? `<span><i style="border-top:1.5px dashed var(--ink);height:0;opacity:.6"></i>without the 9 km model</span>` : ""}
+      </div>
     </section>
     <section><h2>Best windows</h2><div class="windows" id="windows"></div></section>`;
   drawChart(hours, buckets, rangeDays, now, hours.findIndex(x => x.t === focusT));
@@ -371,7 +381,7 @@ function loadSaved() {
 // Saved exactly as fetched (under 1 MB). Rounding would shrink it, but nudges values sitting on a threshold
 // (rain ≥ 0.2 mm, gusty) and changes a few displayed numbers.
 function save(s) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch {} }
-const sigOf = s => JSON.stringify([s.hourly, s.uv]);
+const sigOf = s => JSON.stringify([s.hourly, s.uv, s.hres]);
 const clock = t => new Date(t).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
 const fetchedAt = t => new Date(t).toDateString() === new Date().toDateString() ? clock(t)
   : new Date(t).toLocaleDateString("en-AU", { weekday: "short" }) + " " + clock(t);
@@ -389,8 +399,10 @@ function paintStatus() {
 
 // keepView: redraw in place without moving the page scroll, the chart scroll or the selected hour.
 function show(s, keepView) {
-  const data = toMembers(s); data.uv = s.uv;
-  forecast = { hours: hourlyStats(data), buckets: weekendBuckets(data), now: nowMelb() };
+  // Main forecast: the ensemble sharpened with the 9 km run. Comparison: the ensemble on its own (dashed on the chart).
+  const data = toMembers({ hourly: recentre(s.hourly, s.hres, s.t ?? Date.now()) }); data.uv = s.uv;
+  const raw = s.hres ? toMembers(s) : null; if (raw) raw.uv = s.uv;
+  forecast = { hours: hourlyStats(data), compare: raw ? hourlyStats(raw) : null, buckets: weekendBuckets(data), now: nowMelb() };
   shown = s; shownSig = sigOf(s);
   if (document.getElementById("range-nav").hidden) return;   // "Past weekends" is open; switching back redraws
   if (!keepView) return renderForecast();
@@ -411,9 +423,10 @@ async function run(useDemo) {
   if (!shown && age < SHOW_WHILE_LOADING) show(saved);
   setStatus(shown ? `Forecast from ${fetchedAt(shown.t)} · updating…` : "Loading forecast…");
   try {
-    const [json, uv] = await Promise.all([fetchEnsemble(), fetchUV()]);
-    // fetchUV returns {} on failure; keep the last UV values rather than dropping them.
-    const fresh = { t: Date.now(), hourly: json.hourly, uv: Object.keys(uv).length ? uv : shown?.uv ?? saved?.uv ?? {} };
+    const [json, uv, hres] = await Promise.all([fetchEnsemble(), fetchUV(), fetchHres()]);
+    // fetchUV returns {} and fetchHres null on failure; keep the last values rather than dropping them.
+    const fresh = { t: Date.now(), hourly: json.hourly, uv: Object.keys(uv).length ? uv : shown?.uv ?? saved?.uv ?? {},
+      hres: hres ?? (shown?.hres || saved?.hres || null) };
     if (!shown || sigOf(fresh) !== shownSig) show(fresh, !!shown);   // only redraw when the forecast changed
     else shown = fresh;
     save(fresh);

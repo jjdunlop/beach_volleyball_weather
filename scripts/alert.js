@@ -47,6 +47,8 @@ async function main() {
   const now = process.env.NOW || S.nowMelb();
   const today = now.slice(0, 10), hour = +now.slice(11, 13);
   const json = process.env.FIXTURE ? JSON.parse(fs.readFileSync(process.env.FIXTURE, "utf8")) : await S.fetchEnsemble();
+  // Sharpen the first few days with the 9 km model, as the page does (skipped for fixtures and if it fails).
+  if (!process.env.FIXTURE) json.hourly = S.recentre(json.hourly, await S.fetchHres(), Date.now());
   const data = S.toMembers(json);
   data.uv = process.env.FIXTURE ? {} : await S.fetchUV();
   if (!data.members.length) throw new Error("Forecast had no ensemble members");
