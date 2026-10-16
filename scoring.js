@@ -157,7 +157,7 @@ function blendCells(sea, land) {
       const y = L[key][i], d = S[dirKey][i];
       if (x == null || y == null || d == null) return x ?? y ?? null;
       const w = Math.min(seaWeight(d), SEA_WEIGHT_CAP[v] ?? 1);
-      return w * x + (1 - w) * y;
+      return Math.round((w * x + (1 - w) * y) * 100) / 100;   // 0.01: finer than the 0.1 source data, keeps saves small
     });
   }
   return { ...sea, hourly: out, blended: true };
