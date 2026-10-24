@@ -69,6 +69,12 @@ const tempFactor = feels => curve(feels, [[8, 0.3], [16, 1], [32, 1], [35, 0.75]
 // shows up as 0.1 mm/h, the smallest step the data has. Spitting is enough to take a session off Epic.
 const RAIN_MIN = 0.1;   // counts as "rain" in the rain-chance figures
 const rainFactor = mm => curve(mm, [[0, 1], [0.1, 0.8], [0.5, 0.65], [1, 0.5], [3, 0.25]]);
+// Thunderstorm risk. Lightning isn't in the ensemble data, so a run counts as stormy for an hour when the air is
+// unstable enough for thunderstorms (CAPE ≥ 400 J/kg) and it's actually producing showers (≥ 0.3 mm). A stormy hour
+// is close to unplayable: you'd be heading off the beach.
+const STORM_CAPE = 400, STORM_RAIN = 0.3;
+const isStormy = h => (h.cape ?? 0) >= STORM_CAPE && (h.rain ?? 0) >= STORM_RAIN;
+const stormFactor = h => isStormy(h) ? 0.2 : 1;
 // UV index → multiplier. Minor: getting burnt makes a session less pleasant, but high UV is normal on good summer days.
 const uvFactor = uv => curve(uv, [[6, 1], [8, 0.97], [11, 0.92], [14, 0.85]]);
 // Recency-weighted rain over the previous 12 hours (mm) → multiplier, for soggy, heavy sand.
@@ -80,7 +86,7 @@ const windOnlyRating = (speed, fromDeg) => Math.max(0, windRating(speed * dirFac
 // 0–10 "worth going" rating for one hour.
 function hourScore(h) {
   const base = windRating(h.wind * dirFactor(h.dir, h.wind)) - gustPenalty(gustExcess(h));
-  const mult = tempFactor(h.feels ?? h.temp) * rainFactor(h.rain) * wetFactor(h.wetness ?? 0) * uvFactor(h.uv ?? 0);
+  const mult = tempFactor(h.feels ?? h.temp) * rainFactor(h.rain) * wetFactor(h.wetness ?? 0) * uvFactor(h.uv ?? 0) * stormFactor(h);
   return Math.max(0, Math.min(10, base * mult));
 }
 
@@ -127,7 +133,7 @@ function sunTimes(day) {                         // [sunrise, sunset] in local h
 function playable(day, h) { const [rise, set] = sunTimes(day); return h + 0.5 >= rise && h + 0.5 <= set + 0.25; }
 
 // ---------- Data ----------
-const VARS = ["temperature_2m", "apparent_temperature", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "precipitation"];
+const VARS = ["temperature_2m", "apparent_temperature", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "precipitation", "cape"];
 
 // The model grid is ~25 km, and the beach sits between two grid cells: one over the bay (38.0°S 145.0°E) and one
 // over the inner suburbs (37.75°S 145.0°E). Bay winds are often 2–3× stronger than land winds. So both cells are
@@ -160,6 +166,7 @@ function blendCells(sea, land) {
     out[key] = S[key].map((x, i) => {
       const y = L[key][i], d = S[dirKey][i];
       if (x == null || y == null || d == null) return x ?? y ?? null;
+      if (v === "cape") return Math.max(x, y);   // storm potential: take the more unstable of the two
       const w = Math.min(seaWeight(d), SEA_WEIGHT_CAP[v] ?? 1);
       return Math.round((w * x + (1 - w) * y) * 100) / 100;   // 0.01: finer than the 0.1 source data, keeps saves small
     });
@@ -212,7 +219,8 @@ function hourFrom(get, i, uvAt) {
     dir: d0 == null ? 180 : d1 == null ? d0 : circMean([d0, d1]),
     gust: g == null ? undefined : Math.max(wind, g - GUST_BIAS),
     rain: get("precipitation", j) ?? 0,
-    wetness: wetness(k => get("precipitation", k), j), uv: uvAt?.(i) ?? undefined };
+    wetness: wetness(k => get("precipitation", k), j), uv: uvAt?.(i) ?? undefined,
+    cape: Math.max(get("cape", i) ?? 0, get("cape", j) ?? 0) };
 }
 const memberHour = (m, i) => hourFrom((v, k) => m[v]?.[k], i);
 
@@ -255,26 +263,27 @@ function weekendBuckets(data) {
     const idx = inBlock.filter(([t]) => playable(day, +t.slice(11, 13))).map(([, i]) => i);
     if (!idx.length) return { ...b, day, dark: true, sunset };
     const playStart = +time[idx[0]].slice(11, 13), playEnd = +time[idx[idx.length - 1]].slice(11, 13) + 1;
-    const scores = [], winds = [], gusts = [], dirs = [], temps = [], feels = []; let wet = 0, gusty = 0;
+    const scores = [], winds = [], gusts = [], dirs = [], temps = [], feels = []; let wet = 0, gusty = 0, storm = 0;
     for (const s of series) {
       const sc = blockScore(idx.map(i => s.sust[i]));
       if (sc == null) continue;
       scores.push(sc);
-      let rainy = false, puffy = false;
+      let rainy = false, puffy = false, stormy = false;
       for (const i of idx) {
         const h = s.hours[i]; if (!h) continue;
         winds.push(h.wind); dirs.push(h.dir); temps.push(h.temp); feels.push(h.feels ?? h.temp);
         if (h.gust != null) gusts.push(h.gust);
         if (h.rain >= RAIN_MIN) rainy = true;
         if (gustExcess(h) >= 10) puffy = true;
+        if (isStormy(h)) stormy = true;
       }
-      if (rainy) wet++; if (puffy) gusty++;
+      if (rainy) wet++; if (puffy) gusty++; if (stormy) storm++;
     }
     const lo = pctile(scores, .25), hi = pctile(scores, .75);
     const uvs = idx.map(i => data.uv?.[time[i]]).filter(u => u != null);
     return { ...b, day, scores, med: pctile(scores, .5), lo, hi, iqr: hi - lo, i0: idx[0], uv: uvs.length ? Math.max(...uvs) : null,
       playStart, playEnd, clipped: playStart > b.start || playEnd < b.end, sunset, feels: pctile(feels, .5),
-      pRain: wet / members.length, pGusty: gusty / members.length, wind: pctile(winds, .5), gust: gusts.length ? pctile(gusts, .5) : null,
+      pRain: wet / members.length, pGusty: gusty / members.length, pStorm: storm / members.length, wind: pctile(winds, .5), gust: gusts.length ? pctile(gusts, .5) : null,
       dir: circMean(dirs), temp: pctile(temps, .5),
       lead: Math.round((new Date(day) - new Date(dates[0])) / 864e5) };
   }) }));
@@ -283,6 +292,6 @@ function weekendBuckets(data) {
 if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, exposure, dirFactor, exposureGustFactor, windOnlyRating, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
-  wetness, utcOffset, sunTimes, playable, RAIN_MIN, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, CELLS, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
+  wetness, utcOffset, sunTimes, playable, RAIN_MIN, STORM_CAPE, STORM_RAIN, isStormy, stormFactor, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, CELLS, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
   GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, uvFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };

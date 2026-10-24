@@ -48,6 +48,8 @@ button:focus-visible { outline: 3px solid var(--maybe); outline-offset: 2px }
 .chart-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain }
 .chart-scroll svg { display: block; touch-action: pan-x; cursor: crosshair }
 .chart-scroll text { font: 600 11px var(--body); fill: var(--muted) }
+.chart-scroll .bolt { font-size: 12px }
+.storm { color: var(--bad); font-weight: 600 }
 .chart-scroll .daylbl { font: 700 13px var(--display); letter-spacing: .05em; fill: var(--ink); text-transform: uppercase }
 .chart-scroll .bktlbl { font: 700 10px var(--display); letter-spacing: .06em; fill: var(--bay); text-transform: uppercase }
 .readout { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; font-size: .9rem; font-variant-numeric: tabular-nums; min-height: 52px }
@@ -157,6 +159,7 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
       <tr><th>Rain</th><td>0 mm ×1 · 0.1 (spitting) ×0.8 · 0.5 ×0.65 · 1 ×0.5 · 3 ×0.25</td></tr>
       <tr><th>Wet sand (12 h)</th><td>&lt; 2 mm ×1 · 5 ×0.8 · 10 ×0.55</td></tr>
       <tr><th>UV</th><td>≤ 6 ×1 · 8 ×0.97 · 11 ×0.92 · 14 ×0.85 (not in past weekends)</td></tr>
+      <tr><th>Storms</th><td>Unstable air (CAPE ≥ 400 J/kg) with showers (≥ 0.3 mm) ×0.2 · ⚡ on the chart at 20%+</td></tr>
       <tr><th>Sessions</th><td>Daylight only · 75% average hour + 25% worst</td></tr>
     </table>
     <figure class="cells-fig">
@@ -164,11 +167,12 @@ dt { color: var(--muted) } dd { margin: 0; text-align: right; font-variant-numer
       <figcaption>The forecast model's 25 km grid. The same 51 runs are read at the centre of each square. Wind off the bay uses the bay square, wind off the city the land square, along the shore a mix. Temperature uses the land square.</figcaption>
     </figure>
     </details>
+    <p>Storm risk is an estimate from instability and showers, not a lightning forecast. If you hear thunder, get off the beach.</p>
     <p>ECMWF 51-member ensemble via Open-Meteo. Line = median, band = likely range.</p>
   </footer>
 </div>
 
-<script src="scoring.js?v=2026-10-24a"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
+<script src="scoring.js?v=2026-10-24b"></script><!-- bump ?v= whenever scoring.js changes, so phones don't use a stale cached copy -->
 <script>
 const BEST_MIN_HOURS = 2, BEST_MIN_RATING = 7;  // what counts as a "best window"
 
@@ -185,6 +189,7 @@ function hourlyStats(data) {
       wind: pctile(hs.map(x => x.wind), .5), gust: gusts.length ? pctile(gusts, .5) : null,
       dir: circMean(hs.map(x => x.dir)), temp: pctile(hs.map(x => x.temp), .5), feels: pctile(hs.map(x => x.feels ?? x.temp), .5),
       pRain: hs.length ? hs.filter(x => x.rain >= RAIN_MIN).length / hs.length : 0,
+      pStorm: hs.length ? hs.filter(isStormy).length / hs.length : 0,
       pGusty: hs.length ? hs.filter(x => gustExcess(x) >= 10).length / hs.length : 0, uv: data.uv?.[t] ?? null };
   });
 }
@@ -257,6 +262,8 @@ function drawChart(hours, buckets, days, now, focusIdx) {
     s += `<path d="${area(seg, "p25", "p75")}" style="fill:var(--ink);opacity:.12"/>`;
     s += `<path d="M${seg.map(i => `${X(i)},${Y(hs[i].med)}`).join("L")}" fill="none" stroke="url(#tierg)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
   }
+  // Thunderstorm risk ≥ 20%: a bolt above the hour
+  hs.forEach((x, i) => { if (x.pStorm >= 0.2 && x.daylight) s += `<text x="${X(i)}" y="${top + 12}" text-anchor="middle" class="bolt">⚡</text>`; });
   // Now marker
   const ni = hs.findIndex(x => x.t.slice(0, 13) === now);
   if (ni >= 0) s += `<line x1="${X(ni)}" x2="${X(ni)}" y1="${top - 6}" y2="${top + ph}" style="stroke:var(--bad)" stroke-width="1.5"/><text x="${X(ni) + 3}" y="${top + 10}" style="fill:var(--bad)">now</text>`;
@@ -289,6 +296,7 @@ function setFocus(i, scrollTo) {
     <span><span class="k">gusts</span> ${x.gust != null ? Math.round(x.gust) + " km/h" : "n/a"}</span>
     <span><span class="k">temp</span> ${Math.round(x.temp)}°C <span class="k">feels</span> ${Math.round(x.feels)}°</span>
     <span><span class="k">rain</span> ${Math.round(x.pRain * 100)}%</span>
+    ${x.pStorm >= 0.05 ? `<span class="storm">⚡ storm risk ${Math.round(x.pStorm * 100)}%</span>` : ""}
     ${x.uv != null && x.daylight ? `<span><span class="k">UV</span> ${Math.round(x.uv)} ${uvLabel(x.uv)}</span>` : ""}`;
   if (scrollTo) { const box = document.getElementById("chart-scroll"); box.scrollLeft = Math.max(0, X(i) - box.clientWidth / 3); }
 }
@@ -346,6 +354,7 @@ function renderForecast(focusT) {        // focusT: hour to keep selected on the
           <dt>Gusty</dt><dd>${Math.round(b.pGusty * 100)}%</dd>
           <dt>Temp</dt><dd>${Math.round(b.temp)}°C (feels ${Math.round(b.feels)})</dd>
           <dt>Rain</dt><dd>${Math.round(b.pRain * 100)}%</dd>
+          ${b.pStorm >= 0.05 ? `<dt class="storm">⚡ Storm risk</dt><dd class="storm">${Math.round(b.pStorm * 100)}%</dd>` : ""}
           ${b.uv != null ? `<dt>UV max</dt><dd>${Math.round(b.uv)} ${uvLabel(b.uv)}</dd>` : ""}
         </dl>
         <div class="conf">${conf}</div>`;

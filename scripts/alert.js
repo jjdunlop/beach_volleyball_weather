@@ -25,7 +25,8 @@ function describe(b) {
   const t = S.tierOf(b.med);
   return `${t.label} ${b.med.toFixed(1)}/10 (likely ${b.lo.toFixed(1)}–${b.hi.toFixed(1)}) · ` +
     `${Math.round(b.wind)} km/h ${S.compass(b.dir)}, gusts ${b.gust != null ? Math.round(b.gust) : "?"} · ` +
-    `${Math.round(b.temp)}°C (feels ${Math.round(b.feels)}) · rain ${Math.round(b.pRain * 100)}% · gusty ${Math.round(b.pGusty * 100)}%` + (b.uv != null ? ` · UV ${Math.round(b.uv)} ${S.uvLabel(b.uv)}` : "");
+    `${Math.round(b.temp)}°C (feels ${Math.round(b.feels)}) · rain ${Math.round(b.pRain * 100)}% · gusty ${Math.round(b.pGusty * 100)}%` + (b.uv != null ? ` · UV ${Math.round(b.uv)} ${S.uvLabel(b.uv)}` : "") +
+    (b.pStorm >= 0.05 ? ` · ⚡ storm risk ${Math.round(b.pStorm * 100)}%` : "");
 }
 
 async function notify({ title, message, priority = 3, tags = ["volleyball"] }) {
