@@ -65,8 +65,10 @@ const windRating = eff => curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);
 const gustPenalty = excess => curve(excess, [[8, 0], [15, 0.5], [25, 1.5], [35, 3]]);
 // Feels-like temperature (°C) → multiplier. Includes sun, wind and humidity. 16–32°C no penalty (you're moving).
 const tempFactor = feels => curve(feels, [[8, 0.3], [16, 1], [32, 1], [35, 0.75], [40, 0.3]]);
-// Rain this hour (mm) → multiplier. A few drops are fine; steady rain isn't.
-const rainFactor = mm => curve(mm, [[0.2, 1], [0.5, 0.85], [1, 0.6], [3, 0.3]]);
+// Rain this hour (mm) → multiplier. Open-Meteo spreads the model's 3-hourly totals evenly over the hours, so drizzle
+// shows up as 0.1 mm/h, the smallest step the data has. Spitting is enough to take a session off Epic.
+const RAIN_MIN = 0.1;   // counts as "rain" in the rain-chance figures
+const rainFactor = mm => curve(mm, [[0, 1], [0.1, 0.8], [0.5, 0.65], [1, 0.5], [3, 0.25]]);
 // UV index → multiplier. Minor: getting burnt makes a session less pleasant, but high UV is normal on good summer days.
 const uvFactor = uv => curve(uv, [[6, 1], [8, 0.97], [11, 0.92], [14, 0.85]]);
 // Recency-weighted rain over the previous 12 hours (mm) → multiplier, for soggy, heavy sand.
@@ -263,7 +265,7 @@ function weekendBuckets(data) {
         const h = s.hours[i]; if (!h) continue;
         winds.push(h.wind); dirs.push(h.dir); temps.push(h.temp); feels.push(h.feels ?? h.temp);
         if (h.gust != null) gusts.push(h.gust);
-        if (h.rain >= 0.2) rainy = true;
+        if (h.rain >= RAIN_MIN) rainy = true;
         if (gustExcess(h) >= 10) puffy = true;
       }
       if (rainy) wet++; if (puffy) gusty++;
@@ -281,6 +283,6 @@ function weekendBuckets(data) {
 if (typeof module !== "undefined") module.exports = {
   LAT, LON, TZ, BEACH_FACES, BLOCKS, TIERS, tierOf, exposure, dirFactor, exposureGustFactor, windOnlyRating, curve, hourScore,
   dowOf, ymd, addDays, pctile, compass, circMean, nowMelb, todayMelb, fmtDay, hr, hrsOf, hm,
-  wetness, utcOffset, sunTimes, playable, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, CELLS, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
+  wetness, utcOffset, sunTimes, playable, RAIN_MIN, VARS, fetchEnsemble, fetchBlended, blendCells, seaWeight, CELLS, fetchUV, uvLabel, toMembers, memberHour, weekendBuckets,
   GUST_BIAS, gustExcess, windRating, gustPenalty, tempFactor, rainFactor, wetFactor, uvFactor, hourFrom, sustain, blockScore, ratingSeries, memberSeries,
 };
