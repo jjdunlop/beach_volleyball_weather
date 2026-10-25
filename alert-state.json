@@ -1,18 +1,18 @@
 {
   "buckets": {
-    "2026-10-25 Sun midday": {
-      "epic": false,
-      "med": 0.5
-    },
-    "2026-10-25 Sun arvo": {
-      "epic": false,
-      "med": 0
-    },
     "2026-10-30 Fri night": {
       "epic": false,
-      "med": 6.2
+      "med": 6.5
+    },
+    "2026-10-31 Sat midday": {
+      "epic": false,
+      "med": 5.6
+    },
+    "2026-10-31 Sat arvo": {
+      "epic": false,
+      "med": 5
     }
   },
   "lastSummary": "2026-10-23",
-  "week": "2026-10-19"
+  "week": "2026-10-26"
 }
