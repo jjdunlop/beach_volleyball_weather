@@ -1,20 +1,16 @@
 {
   "buckets": {
-    "2026-11-13 Fri night": {
-      "epic": false,
-      "med": 3.7
-    },
     "2026-11-14 Sat midday": {
       "epic": false,
-      "med": 2.6
+      "med": 2.3
     },
     "2026-11-14 Sat arvo": {
       "epic": false,
-      "med": 2.4
+      "med": 2.3
     },
     "2026-11-15 Sun midday": {
       "epic": false,
-      "med": 1.5
+      "med": 1.4
     },
     "2026-11-15 Sun arvo": {
       "epic": false,
