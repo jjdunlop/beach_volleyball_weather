@@ -2,15 +2,15 @@
   "buckets": {
     "2026-11-27 Fri night": {
       "epic": false,
-      "med": 3.6
+      "med": 2.9
     },
     "2026-11-28 Sat midday": {
       "epic": false,
-      "med": 3.6
+      "med": 3
     },
     "2026-11-28 Sat arvo": {
       "epic": false,
-      "med": 1.3
+      "med": 0.9
     }
   },
   "lastSummary": "2026-11-20",
