@@ -58,8 +58,8 @@ const GUST_BIAS = 5;                            // km/h
 // the turbulence in the city's wake, so offshore winds get their realistic gustiness even when the model's looks tame.
 const gustExcess = h => Math.max(0, (h.gust ?? h.wind * 1.4) - h.wind, h.wind * (exposureGustFactor(h.dir ?? BEACH_FACES) - 1));
 // ---------- Rating factors (each one is plotted on the page) ----------
-// Effective wind (km/h, after direction) → base rating 0–10. Glassy = 10; still rewards calm below 12.
-const windRating = eff => curve(eff, [[5, 10], [12, 7.5], [25, 2], [32, 0]]);
+// Effective wind (km/h, after direction) → base rating 0–10. Up to 8 km/h counts as glassy; strong wind unchanged.
+const windRating = eff => curve(eff, [[8, 10], [14, 7.5], [25, 2], [32, 0]]);
 // Gusts above the average wind (km/h) → points off. The gust is the hour's single strongest ~3 s puff and most of the
 // hour sits near the average, so gustiness costs only a little unless it's extreme.
 const gustPenalty = excess => curve(excess, [[8, 0], [15, 0.5], [25, 1.5], [35, 3]]);
